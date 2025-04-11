@@ -1,4 +1,4 @@
-echo "# 增量备份工具
+# 增量备份工具
 
 ## 简介
 
@@ -16,8 +16,6 @@ echo "# 增量备份工具
 确保你已经安装了 Node.js 和 npm。然后克隆这个仓库并安装依赖：
 
 ```bash
-git clone <repository-url>
-cd <repository-directory>
 npm install
 ```
 
@@ -42,7 +40,7 @@ const config = {
 - **DRY_RUN**：是否进行干运行，不实际执行备份操作。
 - **USE_HASH_COMPARISON**：是否使用哈希比较来判断文件是否需要更新。
 
-## 运行
+## 使用方法
 
 ```bash
 node d:/测试项目/backup/qwen.js
@@ -50,5 +48,15 @@ node d:/测试项目/backup/qwen.js
 
 ## 注意事项
 
-- 请不要备份包含重要数据的目录，如系统目录、用户目录等。
-- 请不要备份包含大量文件的目录，如 node_modules 目录。
+- 请确保备份目录有足够的存储空间。
+- 配置文件中的路径请根据实际情况进行修改。
+
+## 贡献者
+
+
+
+## 许可证
+
+本项目采用 MIT 许可证。
+
+
