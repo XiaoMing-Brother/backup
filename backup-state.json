@@ -1,0 +1,352 @@
+{
+  "D:\\测试项目\\backup\\backup-state.json": {
+    "size": 17470,
+    "mtimeMs": 1744345947720.8972,
+    "hash": "3f7db54d59ca2e2ddec335a8775a73f9a2896f8e77ea87f8da9b82004862c672"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通后台-new\\src\\components\\manage\\bloc\\spection\\spectionHidden.vue": {
+    "size": 36873,
+    "mtimeMs": 1744005773316.9497,
+    "hash": "fc09679e9edd1fd49998cd6d5b169a03fef801b397f2c9dafd708bb05e7c6e03"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通后台-new\\package.json": {
+    "size": 3132,
+    "mtimeMs": 1744004447221.542,
+    "hash": "ae8756829e36996f4b621fd7663ce13c8e5898f5af58ec83dea05e8aaba8b832"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通后台-new\\src\\components\\manage\\companyManage\\spection\\spectionHidden.vue": {
+    "size": 34808,
+    "mtimeMs": 1744005726118.9324,
+    "hash": "07554044c400634478623d97a5f50f4946a15b5ec36173f0105f9f4ee85a2b4f"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\package\\system\\fire-repair\\taskList\\taskList.js": {
+    "size": 15331,
+    "mtimeMs": 1744078785330.5847,
+    "hash": "7becfd2da4e6d0b332a93c1dbd210fad01bd918f72080b9869860c5884ee6d46"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\package\\system\\fire-repair\\taskList\\taskList.wxml": {
+    "size": 28286,
+    "mtimeMs": 1744078928080.2966,
+    "hash": "7453fabf4f6891378b6b154cc4e1b32e29d31c2f16f7266e64e34cbacea7f422"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\images\\msg-icon2.png": {
+    "size": 1169,
+    "mtimeMs": 1744079337491.1108,
+    "hash": "79cca38d95e8d45683122f8c4bc50de73a8bf258d0bf3db6a12b8e0c3cac2a3e"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\images\\msg-icon1.png": {
+    "size": 944,
+    "mtimeMs": 1744079279657.8904,
+    "hash": "49df66535facd2c3096d098005de7df4060ddbc7c07c1b23bd6fe7c5e8dfd6da"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\pages\\message\\message.wxss": {
+    "size": 11562,
+    "mtimeMs": 1744082395820.421,
+    "hash": "5d51c716a4823a03f1635068b3fbffbbcdf67b6565c5264269e426cf049951b6"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\pages\\message\\message.less": {
+    "size": 13225,
+    "mtimeMs": 1744082395791.722,
+    "hash": "12533e2076b8d8fe4d24d371ae7f9f1bd9a0d0ea829db35143578b140a5251ab"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\pages\\message\\message.wxml": {
+    "size": 18984,
+    "mtimeMs": 1744081089852.9097,
+    "hash": "3f3b934ab9095478b7b395f0297cfaa14884b4377b0fe8b9f0d947595a57cb78"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\package\\system\\fire-repair\\single\\single.wxml": {
+    "size": 6164,
+    "mtimeMs": 1744080211379.712,
+    "hash": "bac8541540c95146d86db6a8fa4533bccaa8bd9a1d577ae66c6bf862feb52559"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\package\\system\\fire-repair\\single\\single.js": {
+    "size": 4769,
+    "mtimeMs": 1744080245793.6943,
+    "hash": "4c0c658611ae870c0cf6d088438c941f51360de68b315503707b9b279777a6a8"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\images\\msg-icon3.png": {
+    "size": 2119,
+    "mtimeMs": 1712814057016.8767,
+    "hash": "fa1d2a38d3bb15d08a74f58d6c394648321a16bdd0a94c0e8ee3bbdcc4c07a12"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\images\\msg-time.png": {
+    "size": 542,
+    "mtimeMs": 1712814057919.006,
+    "hash": "97b83f1bde324c903ea725649e4043d742f6f33aac902692c3a9ed0b10fd2638"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\package\\system\\electricity\\index.wxml": {
+    "size": 11783,
+    "mtimeMs": 1744081071189.8943,
+    "hash": "a4632ce35eb090472d3d21f12e07a15f74a19f7c0d06f8726c6fe388c119bf9d"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\package\\system\\fire-repair\\testData\\testData.wxml": {
+    "size": 4608,
+    "mtimeMs": 1744081071189.8943,
+    "hash": "4df6f558d2bb36eba0f0649001abf8a4f8200ba80e3a716268cb72ca7972251e"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\package\\system\\fire-water\\monitoring\\index.wxml": {
+    "size": 15245,
+    "mtimeMs": 1744081613755.0928,
+    "hash": "cafbce12eedd52850488aa593b26e8589d2021bf37d002466d63abe95e039a0b"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\package\\system\\fire-water\\monitoring\\index.wxss": {
+    "size": 11935,
+    "mtimeMs": 1744082401688.8562,
+    "hash": "9906891d0a1a23204c9eac0bdd2edf692f1771669f52222280c74e34fab2f1f2"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\package\\device\\fire-eqment\\eqment\\eqment.wxml": {
+    "size": 5691,
+    "mtimeMs": 1744081071189.8943,
+    "hash": "fed4c818acc27f581b46c39f9ef26b1f91db91c8a4c98fd89e22cb2731415394"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\package\\system\\fire-water\\monitoring\\index.less": {
+    "size": 13528,
+    "mtimeMs": 1744082401673.0217,
+    "hash": "512c356b018bb2db94761bdf677cb1b8e9212a6b5bfe735bdca08bf8a97e9bd2"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\pages\\index\\components\\newMsg\\newMsg.wxml": {
+    "size": 3075,
+    "mtimeMs": 1744081071189.8943,
+    "hash": "01bc268d7bd086abeca00cbdfee4e48115badcc4b5885d382b67e2a16f412cc8"
+  },
+  "D:\\projectCode\\杭州消防\\B上一版本\\消迅通\\images\\msg-icon1.png": {
+    "size": 944,
+    "mtimeMs": 1744104203459.886,
+    "hash": "49df66535facd2c3096d098005de7df4060ddbc7c07c1b23bd6fe7c5e8dfd6da"
+  },
+  "D:\\projectCode\\杭州消防\\B上一版本\\消迅通\\images\\msg-icon2.png": {
+    "size": 1169,
+    "mtimeMs": 1744104203459.886,
+    "hash": "79cca38d95e8d45683122f8c4bc50de73a8bf258d0bf3db6a12b8e0c3cac2a3e"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\维讯通-new\\pages\\mine\\mine.less": {
+    "size": 2505,
+    "mtimeMs": 1744182289581.7212,
+    "hash": "5c83333cf50d1b0cd7aec9c091a5ff35bd6e484ac448f6f3180b1cd79dd4fd03"
+  },
+  "D:\\projectCode\\杭州消防\\B上一版本\\消迅通\\pages\\message\\message.wxss": {
+    "size": 11477,
+    "mtimeMs": 1744104203414.027,
+    "hash": "62272c6398eb6b4f85a5e0f190d72685570056160f4bacd97c1a67992110e01b"
+  },
+  "D:\\projectCode\\杭州消防\\B上一版本\\消迅通\\pages\\message\\message.wxml": {
+    "size": 18977,
+    "mtimeMs": 1744104203415.5337,
+    "hash": "ba13f0d2cfe753c4ec6694640c73221b5a56a992b001e35eeaee7f6a0ad4c9cd"
+  },
+  "D:\\projectCode\\杭州消防\\B上一版本\\消迅通\\pages\\message\\message.less": {
+    "size": 13116,
+    "mtimeMs": 1744104203415.5337,
+    "hash": "8b156b0248b97f8f84dc4dc07657c7770b7317cf56f08544f51087d2e627470c"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\维讯通-new\\pages\\mine\\mine.wxss": {
+    "size": 2144,
+    "mtimeMs": 1744182289595.9963,
+    "hash": "490feef3c0e1e4c5737eb760036e511620d4ba59ad5a1ef432d1dbf771ac21f2"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\维讯通-new\\pages\\mine\\mine.wxml": {
+    "size": 1945,
+    "mtimeMs": 1744105124091.0747,
+    "hash": "5864e6621ea6d8e6a0389ad91adaf99e2f294e403c07a47e4f9ade3f805f060f"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\维讯通-new\\pages\\mine\\mine.js": {
+    "size": 1668,
+    "mtimeMs": 1744104565496.9707,
+    "hash": "f75768a6446e54f973d3cd59b4037c3d214a14cce7197f6d9c99e57100214658"
+  },
+  "D:\\projectCode\\杭州消防\\B上一版本\\消迅通\\package\\system\\fire-repair\\single\\single.wxml": {
+    "size": 6164,
+    "mtimeMs": 1744104203347.5417,
+    "hash": "bac8541540c95146d86db6a8fa4533bccaa8bd9a1d577ae66c6bf862feb52559"
+  },
+  "D:\\projectCode\\杭州消防\\B上一版本\\消迅通\\package\\system\\fire-repair\\single\\single.js": {
+    "size": 4769,
+    "mtimeMs": 1744104203349.0476,
+    "hash": "4c0c658611ae870c0cf6d088438c941f51360de68b315503707b9b279777a6a8"
+  },
+  "D:\\projectCode\\杭州消防\\B上一版本\\消迅通\\package\\system\\fire-repair\\taskList\\taskList.js": {
+    "size": 15331,
+    "mtimeMs": 1744104203373.6292,
+    "hash": "7becfd2da4e6d0b332a93c1dbd210fad01bd918f72080b9869860c5884ee6d46"
+  },
+  "D:\\projectCode\\杭州消防\\B上一版本\\消迅通\\package\\system\\fire-repair\\taskList\\taskList.wxml": {
+    "size": 28286,
+    "mtimeMs": 1744104203372.6235,
+    "hash": "7453fabf4f6891378b6b154cc4e1b32e29d31c2f16f7266e64e34cbacea7f422"
+  },
+  "D:\\projectCode\\杭州消防\\B上一版本\\消迅通后台\\src\\components\\manage\\bloc\\spection\\spectionHidden.vue": {
+    "size": 36873,
+    "mtimeMs": 1744104211841.1794,
+    "hash": "fc09679e9edd1fd49998cd6d5b169a03fef801b397f2c9dafd708bb05e7c6e03"
+  },
+  "D:\\projectCode\\杭州消防\\B上一版本\\消迅通后台\\src\\components\\manage\\companyManage\\spection\\spectionHidden.vue": {
+    "size": 34808,
+    "mtimeMs": 1744104211855.392,
+    "hash": "07554044c400634478623d97a5f50f4946a15b5ec36173f0105f9f4ee85a2b4f"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\package\\device\\inspection-ment\\patrol\\index.wxml": {
+    "size": 14836,
+    "mtimeMs": 1744166800243.2087,
+    "hash": "e13bc57baefea6815256d34c9d3b37d5a24f40bd9315faae28d91c68c65d74da"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\package\\device\\inspection-ment\\patrol\\index.js": {
+    "size": 11128,
+    "mtimeMs": 1744165382844.9854,
+    "hash": "ae53549961c632b51afd83e4c88f7a34f3449a8d0c3c1bfc3db4a361a094f1eb"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\package\\device\\inspection-ment\\task\\index.js": {
+    "size": 14917,
+    "mtimeMs": 1744165576456.7766,
+    "hash": "f29d47183541137e209340154bf31d72c93dfd3869a72c0ca489782eccf60ebc"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\package\\device\\inspection-ment\\task\\report\\index.wxml": {
+    "size": 4518,
+    "mtimeMs": 1744164164373.897,
+    "hash": "7bde911bd1486f0a02b437e28030d74e5b8cd1c330ca8a6828b1e873493d03d2"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\package\\device\\inspection-ment\\task\\report\\index.js": {
+    "size": 7801,
+    "mtimeMs": 1744182751401.449,
+    "hash": "c6b661456d148663ba5e08b98cad01dd4aabddab8856153d7cdc00e8d87587ac"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\package\\device\\inspection-ment\\task\\index.wxss": {
+    "size": 15090,
+    "mtimeMs": 1744166632335.1877,
+    "hash": "f0d0fa7cd8fc3318137f06c7b971c63809459ffc655197604a445d83e1117ea5"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\package\\device\\inspection-ment\\task\\index.less": {
+    "size": 17563,
+    "mtimeMs": 1744166632311.5227,
+    "hash": "12f23502eb447f0b30712ba919de4652f35997d6c99c1f5e0f67efa1d30bb639"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\package\\device\\inspection-ment\\task\\index.wxml": {
+    "size": 16105,
+    "mtimeMs": 1744166861790.2395,
+    "hash": "1cde038b19257a95314340f8dd8e130f22f05ce2b3ccaecce6bd3c97ce229960"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\维讯通-new\\package\\fault\\faultTaskInfo\\faultTaskInfo.wxml": {
+    "size": 26380,
+    "mtimeMs": 1744177868394.5898,
+    "hash": "a727b024022a7f4dd6bf5b073e56ac3496baf5cd59697f85b3492c3f84ee6a86"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\package\\system\\fire-repair\\faultTaskInfo\\faultTaskInfo.wxml": {
+    "size": 16165,
+    "mtimeMs": 1744178021096.2405,
+    "hash": "f4a04473bef7a1a790db207af25852243ccc27f73a4af496a611361f49c0e58b"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\pages\\mine\\mine.less": {
+    "size": 4667,
+    "mtimeMs": 1744182357937.779,
+    "hash": "284336a2afd5154c9568b9a5854ce2860100da4533fc7abfa7195301f608a55e"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\pages\\mine\\mine.wxml": {
+    "size": 8004,
+    "mtimeMs": 1744182383564.8735,
+    "hash": "952d2a8c3fd8137871f3bca64f08265ccbf67581df3f5f5555d14061902cc520"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\pages\\mine\\mine.wxss": {
+    "size": 4019,
+    "mtimeMs": 1744182357945.751,
+    "hash": "546e46dfdf07258860b00d3f45fcae2deea9c418075d109908132633cde02666"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\package\\system\\fire-repair\\report\\report.js": {
+    "size": 8568,
+    "mtimeMs": 1744183488805.2869,
+    "hash": "95281d72c0e91cd5edb97df9ac3833a3e0352ff334a5202adadc88e5968d863b"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\package\\device\\hidden_rectify\\handle\\index.js": {
+    "size": 6118,
+    "mtimeMs": 1744183225430.666,
+    "hash": "06770dd9c18741846ce2ad860cbc85f714382cdcbe4d0f8c49adf9acbb2cfc73"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\package\\device\\hidden_rectify\\handle\\index.wxml": {
+    "size": 2313,
+    "mtimeMs": 1744183216913.6538,
+    "hash": "05c7085bc46c7d15fe763b5370a77649ed99df979e56e6588adb47933ebb2eb9"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\package\\system\\fire-repair\\report\\report.wxml": {
+    "size": 4303,
+    "mtimeMs": 1744183207887.895,
+    "hash": "5c31710eee165eba75bc7a1dc1922f4e18948fac5ff0aa93587f00679b7747ee"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\app.js": {
+    "size": 15290,
+    "mtimeMs": 1744184752792.0264,
+    "hash": "626022da124869b1a172009b726115b6963fc3131abdf7122e9912686122a482"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\pages\\message\\review\\review.json": {
+    "size": 340,
+    "mtimeMs": 1744183931022.156,
+    "hash": "fd89e585ce3ae32123c7bab3da295d726d13230a52f8baf903c36a5efb4e0226"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\pages\\message\\review\\review.wxml": {
+    "size": 5411,
+    "mtimeMs": 1744183638832.119,
+    "hash": "7a127bc1ae933a88928d81b75d2e4a32c3a3592dfc32d335859e00f783640f42"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\pages\\message\\review\\review.js": {
+    "size": 7557,
+    "mtimeMs": 1744183936342.277,
+    "hash": "1401907233ec8eed7203c1874ce77623ffe2ed19238ba605f990bb93e6531dee"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\package\\device\\hidden_rectify\\handle\\index.wxss": {
+    "size": 2889,
+    "mtimeMs": 1744184106720.356,
+    "hash": "5b53e11d155c5d4223b2fd672de56d4438f9556c663bce50e6fb5351ca7a62e5"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\package\\device\\hidden_rectify\\handle\\index.less": {
+    "size": 3096,
+    "mtimeMs": 1744184106707.2444,
+    "hash": "e4ad924b5264a0b7a00f39084afcc9dd3368b01c5a6a7d5b83a8224f2e0eebf5"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\package\\other\\fire-train\\trainList\\trainList.js": {
+    "size": 1539,
+    "mtimeMs": 1744184412537.1855,
+    "hash": "53fc261bc62c6efac96515e2920454657dfb3ac136d5240949d9c127cdc875e9"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\package\\other\\fire-train\\study\\study.js": {
+    "size": 4023,
+    "mtimeMs": 1744184446972.8066,
+    "hash": "73e03831954885874664fe4c4f5f3b0509042e93c9722ba4611f85d3a6c2f9f8"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\pages\\index\\components\\resetCondition\\resetCondition.less": {
+    "size": 5482,
+    "mtimeMs": 1744184319543.2295,
+    "hash": "32a0477afef69c050c01314f92d485234c8d4747df58e9cf14a4e4ff6e73a77c"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\pages\\index\\components\\resetCondition\\resetCondition.wxml": {
+    "size": 3508,
+    "mtimeMs": 1744184321837.0105,
+    "hash": "dc78f459aa628df757c4258c1ebc6a64d121bc1116bde09382f4a94b3cd09ea8"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\package\\device\\inspection-ment\\task\\report\\index.less": {
+    "size": 5653,
+    "mtimeMs": 1744184129919.6946,
+    "hash": "4f2ca6aad4b7bb362ca664a2e092e7cfba387b7e20f733061164ffe0c6c2483d"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\package\\device\\inspection-ment\\task\\report\\index.wxss": {
+    "size": 4961,
+    "mtimeMs": 1744184129931.7712,
+    "hash": "fdd5c869cdca948942e77f80139b18f32995cb4cadb4a99fbbb7a882800dcfe4"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通-new\\pages\\index\\components\\resetCondition\\resetCondition.wxss": {
+    "size": 4949,
+    "mtimeMs": 1744184319553.0725,
+    "hash": "d4f749c5b2cc18822cb50f57b980fb4646d1a1df822830c7b548a06d96ebf623"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\维讯通-new\\package\\protect\\record\\situation\\situation.js": {
+    "size": 17963,
+    "mtimeMs": 1744255746229.7434,
+    "hash": "1718af6a1d1e90525d5fa1f3ae992b6e3642f488d40630088d56e58b88037e87"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\维讯通-new\\pages\\task\\taskList\\taskList.less": {
+    "size": 41540,
+    "mtimeMs": 1744269224897.3982,
+    "hash": "cf98b44bf2a9d0e41b23fec2a4e1787ac4f6434081c0430ead9a260fd9a579db"
+  },
+  "D:\\projectCode\\杭州消防\\C新需求版本\\维讯通-new\\pages\\task\\taskList\\taskList.wxss": {
+    "size": 35949,
+    "mtimeMs": 1744269224919.9592,
+    "hash": "a628ecde6f140779e1db86501cb3781898bc04ca365b1433f01b1ef68e8f9f4c"
+  }
+}
