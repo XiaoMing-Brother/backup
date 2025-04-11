@@ -1,8 +1,8 @@
 {
   "D:\\测试项目\\backup\\backup-state.json": {
     "size": 17470,
-    "mtimeMs": 1744345947720.8972,
-    "hash": "3f7db54d59ca2e2ddec335a8775a73f9a2896f8e77ea87f8da9b82004862c672"
+    "mtimeMs": 1744347752800.5115,
+    "hash": "10607200d73252a1cfecc4cb6f023b8e900b44d015d11711168ccd8f030a443d"
   },
   "D:\\projectCode\\杭州消防\\C新需求版本\\消迅通后台-new\\src\\components\\manage\\bloc\\spection\\spectionHidden.vue": {
     "size": 36873,
@@ -348,5 +348,10 @@
     "size": 35949,
     "mtimeMs": 1744269224919.9592,
     "hash": "a628ecde6f140779e1db86501cb3781898bc04ca365b1433f01b1ef68e8f9f4c"
+  },
+  "D:\\测试项目\\backup\\REANME.md": {
+    "size": 2049,
+    "mtimeMs": 1744349323551.5522,
+    "hash": "c8403e2ec9776b8663c2c6a25fed41e76ff65893173ff617e02db23807f6b3b1"
   }
 }
