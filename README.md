@@ -15,12 +15,14 @@ echo "# 增量备份工具
 
 确保你已经安装了 Node.js 和 npm。然后克隆这个仓库并安装依赖：
 
-````bash
+```bash
 git clone <repository-url>
 cd <repository-directory>
 npm install
+```
 
 在代码中可以修改 main 函数中的 config 对象来配置备份任务：
+
 ```javascript
 const config = {
   BACKUP_TASKS: [
@@ -31,17 +33,20 @@ const config = {
   DRY_RUN: false, // 是否进行干运行，不实际执行备份操作
   USE_HASH_COMPARISON: true, // 是否使用哈希比较来判断文件是否需要更新
 };
+```
 
 ## 配置项说明
+
 - **BACKUP_TASKS**：备份任务列表，每个任务包含两个属性：`source` 和 `backup`。`source` 是需要备份的源目录，`backup` 是备份到的文件夹。
 - **INTERVAL**：备份间隔时间，单位为毫秒。
 - **DRY_RUN**：是否进行干运行，不实际执行备份操作。
 - **USE_HASH_COMPARISON**：是否使用哈希比较来判断文件是否需要更新。
 
 ## 运行
+
 ```bash
 node d:/测试项目/backup/qwen.js
-````
+```
 
 ## 注意事项
 
