@@ -7,6 +7,7 @@ const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
 const pause = ms => new Promise(r => setTimeout(r, ms));
 const root = path.resolve(__dirname, '..');
+const pkgVersion = require(path.join(root,'package.json')).version;
 const output = path.join(root, 'artifacts', 'light-ui');
 fs.mkdirSync(output, {recursive:true});
 const server = http.createServer((req, res) => {
@@ -15,7 +16,7 @@ const server = http.createServer((req, res) => {
   res.setHeader('Content-Type', {html:'text/html; charset=utf-8',js:'text/javascript; charset=utf-8',css:'text/css; charset=utf-8',png:'image/png'}[name.split('.').pop()]);
   res.end(fs.readFileSync(path.join(root,'app','renderer',name)));
 });
-const fixture = () => {
+const fixture = (version) => {
   let listener;
   const config = {theme:'graphite',tasks:[{source:'D:\\Projects\\网站项目',backup:'E:\\Backups\\网站项目'},{source:'D:\\Documents\\设计素材',backup:'E:\\Backups\\设计素材'}],intervalMinutes:30,scheduleMode:'interval',dailyTimes:['09:00','18:00'],weeklyDays:[1,5],weeklyTime:'09:00',useHashComparison:true};
   const result = {success:true,filesCopied:12,filesSkipped:328,totalBytes:24117248,savedBytes:403701760,errors:0,itemsDeleted:0,finishedAt:Date.now()-120000,durationMs:2300};
@@ -23,8 +24,8 @@ const fixture = () => {
     getState: async()=>({config,status:{schedulerRunning:true,running:false,nextRunAt:Date.now()+1234000,lastResult:result},logs:[],history:[result]}),
     onPush:fn=>listener=fn,saveConfig:async patch=>{Object.assign(config,patch);listener?.({type:'config',data:config});},
     onMaximizeChange:()=>{},isMaximized:async()=>false,runNow:async()=>({ok:true}),pauseBackup:async()=>{window.pauseClicks=(window.pauseClicks||0)+1;return {ok:true};},resumeBackup:async()=>{window.resumeClicks=(window.resumeClicks||0)+1;return {ok:true};},stopBackup:async()=>{window.stopClicks=(window.stopClicks||0)+1;return {ok:true};},resumeLastBackup:async()=>{window.recoveryClicks=(window.recoveryClicks||0)+1;return {ok:true};},uploadQuark:async()=>{window.quarkUploadClicks=(window.quarkUploadClicks||0)+1;return {ok:true};},pickFolder:async()=>null,
-    startScheduler:async()=>{},stopScheduler:async()=>{},openPath:async()=>{},openUrl:async()=>{},clearHistory:async()=>{},quarkLogin:async()=>({ok:true}),quarkFinishLogin:async()=>({ok:true}),
-    getAppInfo:async()=>({version:'1.1.38',identifier:'com.local.backup-assistant',license:'MIT',repository:'https://github.com/XiaoMing-Brother/backup',dataDir:'C:\\Users\\Test\\AppData\\Roaming\\incremental-backup-assistant',debug:false}),
+    startScheduler:async()=>{},stopScheduler:async()=>{},openPath:async p=>{(window.openedPaths=window.openedPaths||[]).push(p);},openUrl:async u=>{(window.externalUrls=window.externalUrls||[]).push(u);},clearHistory:async()=>{},quarkLogin:async()=>({ok:true}),quarkFinishLogin:async()=>({ok:true}),
+    getAppInfo:async()=>({version,identifier:'com.local.backup-assistant',license:'MIT',repository:'https://github.com/XiaoMing-Brother/backup',dataDir:'C:\\Users\\Test\\AppData\\Roaming\\incremental-backup-assistant',debug:false}),
     minimizeWindow:()=>{},toggleMaximize:()=>{},hideWindow:()=>{},closeWindow:()=>{},
   };
 };
@@ -52,7 +53,7 @@ const fixture = () => {
     const evaluate=async expression=>{const r=await send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(r.exceptionDetails)throw new Error(JSON.stringify(r.exceptionDetails));return r.result.value;};
     const shot=async name=>{await pause(350);const r=await send('Page.captureScreenshot',{format:'png'});fs.writeFileSync(path.join(output,`${name}.png`),Buffer.from(r.data,'base64'));};
     await send('Runtime.enable');await send('Page.enable');
-    await send('Page.addScriptToEvaluateOnNewDocument',{source:`(${fixture.toString()})()`});
+    await send('Page.addScriptToEvaluateOnNewDocument',{source:`(${fixture.toString()})(${JSON.stringify(pkgVersion)})`});
     await send('Emulation.setDeviceMetricsOverride',{width:1120,height:740,deviceScaleFactor:1,mobile:false});
     await send('Page.navigate',{url:`http://127.0.0.1:${server.address().port}/`});
     for(let i=0;i<80;i++){if(await evaluate('document.body?.dataset.ready === "1"'))break;await pause(100);}
@@ -91,6 +92,23 @@ const fixture = () => {
     await send('Emulation.setDeviceMetricsOverride',{width:1120,height:740,deviceScaleFactor:1,mobile:false});
     await evaluate("switchView('settings');document.querySelector('#theme-grid').scrollIntoView({block:'center'})");await shot('themes');
     await evaluate("switchView('about')");await shot('about');
+    // 关于页：外链必须交给系统浏览器，不能在应用窗口内导航
+    const appUrl = await evaluate('location.href');
+    await evaluate("window.externalUrls=[];window.openedPaths=[];window.copiedText='';try{Object.defineProperty(navigator,'clipboard',{value:{writeText:async t=>{window.copiedText=t;}},configurable:true});}catch(e){}window.__scrolled=[];window.__origScrollIntoView=Element.prototype.scrollIntoView;Element.prototype.scrollIntoView=function(){window.__scrolled.push(this.id||'?');};");
+    await evaluate("document.querySelector('#about-repo-link').click()");
+    await pause(250);
+    assert.equal(await evaluate('location.href'),appUrl,'repository link must not navigate inside the app window');
+    assert.deepEqual(await evaluate('window.externalUrls'),['https://github.com/XiaoMing-Brother/backup'],'repository link is handed to the system browser');
+    await evaluate("window.externalUrls=[];document.querySelector('#btn-about-repo').click()");
+    assert.deepEqual(await evaluate('window.externalUrls'),['https://github.com/XiaoMing-Brother/backup'],'repository button is handed to the system browser');
+    await evaluate("document.querySelector('#btn-about-changelog').click()");
+    assert.deepEqual(await evaluate('window.__scrolled'),['about-changelog-card'],'changelog button scrolls to the timeline');
+    await evaluate("document.querySelector('#btn-about-data').click()");
+    assert.deepEqual(await evaluate('window.openedPaths'),['C:\\Users\\Test\\AppData\\Roaming\\incremental-backup-assistant'],'data directory button opens the data folder');
+    await evaluate("document.querySelector('#btn-about-copy').click()");
+    await pause(150);
+    assert.match(await evaluate('window.copiedText'),new RegExp(`Backy ${pkgVersion.replace(/\./g,'\\.')}`),'copy button copies version info');
+    await evaluate("Element.prototype.scrollIntoView=window.__origScrollIntoView");
     await evaluate("switchView('tasks');openModal(-1)");
     assert.equal(await evaluate("document.querySelector('#modal-quark').checked"),false,'new tasks default to local only');
     await evaluate("closeModal();document.querySelector('#task-list [data-task-quark]').click()");
@@ -196,7 +214,7 @@ const fixture = () => {
     await evaluate("S.config.tasks=[];renderTasks();renderDashTasks();S.history=[];renderStats();switchView('dashboard')");await shot('empty');
     assert.equal(await evaluate('document.querySelectorAll("#dash-tasks .empty-state").length'),1);
     assert.deepEqual(errors,[]);
-    console.log(JSON.stringify({ok:true,checks:['five themes','six views at 1120 and 920','quark login and retry states','per-task upload choice','optional root and unsaved draft','state transitions','moving file','rapid restart','reduced motion','hidden window','empty state','no runtime exceptions'],screenshots:output},null,2));
+    console.log(JSON.stringify({ok:true,checks:['five themes','six views at 1120 and 920','about panel actions','quark login and retry states','per-task upload choice','optional root and unsaved draft','state transitions','moving file','rapid restart','reduced motion','hidden window','empty state','no runtime exceptions'],screenshots:output},null,2));
   } finally {
     try {
       // Edge 在 Windows 上可能重启为新进程，用 CDP 关闭整个测试浏览器。

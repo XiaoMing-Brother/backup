@@ -756,6 +756,19 @@ function bindButtons() {
     }
   });
 
+  // 关于
+  $("#btn-about-repo").addEventListener("click", openRepository);
+  $("#btn-about-copy").addEventListener("click", copyAppInfo);
+  $("#btn-about-changelog").addEventListener("click", () => {
+    const card = $("#about-changelog-card");
+    if (card) card.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+  $("#btn-about-data").addEventListener("click", () => {
+    const dir = (S.appInfo && S.appInfo.dataDir) || "";
+    if (!dir) return alert("未获取到数据目录");
+    window.backupAPI.openPath(dir).catch((e) => alert(String((e && e.message) || e || "打开目录失败")));
+  });
+
   // 主题切换
   $$("#theme-grid .theme-card").forEach((card) =>
     card.addEventListener("click", () => {
@@ -1114,6 +1127,24 @@ function openRepository() {
   if (!repo) { alert("未配置仓库地址"); return; }
   window.backupAPI.openUrl(repo).catch((e) => alert(String((e && e.message) || e || "打开链接失败")));
 }
+
+/**
+ * 外链统一交给系统浏览器。
+ * WebView 中 <a href="https://..."> 的默认行为是在应用窗口内导航，页面会「跳」进网站且无法返回；
+ * 这里在捕获阶段拦下点击，改走 open_url 交给默认浏览器。中键（auxclick）同样处理。
+ */
+function handleExternalLink(event) {
+  const anchor = event.target && event.target.closest ? event.target.closest("a[href]") : null;
+  if (!anchor) return;
+  const href = anchor.getAttribute("href") || "";
+  if (!/^https?:\/\//i.test(href)) return; // 站内锚点与相对路径保持默认行为
+  const api = window.backupAPI;
+  if (!api || typeof api.openUrl !== "function") return; // 纯浏览器预览时不拦截
+  event.preventDefault();
+  api.openUrl(href).catch((e) => alert(String((e && e.message) || e || "打开链接失败")));
+}
+document.addEventListener("click", handleExternalLink, true);
+document.addEventListener("auxclick", handleExternalLink, true);
 
 /* ---------- 初始化 ---------- */
 (async function init() {
