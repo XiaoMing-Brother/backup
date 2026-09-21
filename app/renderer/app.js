@@ -757,6 +757,7 @@ function bindButtons() {
   });
 
   // 关于
+  $("#btn-about-download").addEventListener("click", downloadLatest);
   $("#btn-about-repo").addEventListener("click", openRepository);
   $("#btn-about-copy").addEventListener("click", copyAppInfo);
   $("#btn-about-changelog").addEventListener("click", () => {
@@ -1122,10 +1123,27 @@ async function copyAppInfo() {
   }
 }
 
+/** 取仓库地址并去掉结尾斜杠，便于安全拼接子路径 */
+function repoBase() {
+  const repo = (S.appInfo && S.appInfo.repository) || (window.BACKY_RELEASE || {}).repository || "";
+  return String(repo).replace(/\/+$/, "");
+}
+
 function openRepository() {
-  const repo = (S.appInfo && S.appInfo.repository) || (window.BACKY_RELEASE || {}).repository;
+  const repo = repoBase();
   if (!repo) { alert("未配置仓库地址"); return; }
   window.backupAPI.openUrl(repo).catch((e) => alert(String((e && e.message) || e || "打开链接失败")));
+}
+
+/**
+ * 打开最新版下载页。
+ * 固定指向 releases/latest（而不是当前版本的 tag）：老版本用户点它总能拿到最新包，
+ * 也不需要每次发版都改前端。
+ */
+function downloadLatest() {
+  const repo = repoBase();
+  if (!repo) { alert("未配置仓库地址"); return; }
+  window.backupAPI.openUrl(`${repo}/releases/latest`).catch((e) => alert(String((e && e.message) || e || "打开链接失败")));
 }
 
 /**

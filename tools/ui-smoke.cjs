@@ -99,6 +99,10 @@ const fixture = (version) => {
     await pause(250);
     assert.equal(await evaluate('location.href'),appUrl,'repository link must not navigate inside the app window');
     assert.deepEqual(await evaluate('window.externalUrls'),['https://github.com/XiaoMing-Brother/backup'],'repository link is handed to the system browser');
+    await evaluate("window.externalUrls=[];document.querySelector('#btn-about-download').click()");
+    await pause(150);
+    assert.equal(await evaluate('location.href'),appUrl,'download button must not navigate inside the app window');
+    assert.deepEqual(await evaluate('window.externalUrls'),['https://github.com/XiaoMing-Brother/backup/releases/latest'],'download button opens the latest release page');
     await evaluate("window.externalUrls=[];document.querySelector('#btn-about-repo').click()");
     assert.deepEqual(await evaluate('window.externalUrls'),['https://github.com/XiaoMing-Brother/backup'],'repository button is handed to the system browser');
     await evaluate("document.querySelector('#btn-about-changelog').click()");
