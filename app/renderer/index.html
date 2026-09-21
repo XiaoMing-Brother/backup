@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost;" />
+  <title>Backy</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body data-theme="graphite">
+  <!-- 背景流动粒子画布 -->
+  <canvas id="bg-particles"></canvas>
+  <!-- 自定义标题栏 -->
+  <header id="titlebar">
+    <div class="tb-left">
+      <img src="icon.png" class="tb-icon" alt="" draggable="false" />
+      <span class="tb-title">Backy</span>
+      <span id="tb-status" class="chip idle">定时已停止</span>
+    </div>
+    <div class="tb-controls">
+      <button id="btn-min" class="tb-btn" title="最小化"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="12" x2="20" y2="12"/></svg></button>
+      <button id="btn-max" class="tb-btn" title="最大化"><svg class="ico-max" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="1.5"/></svg><svg class="ico-restore" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="display:none"><rect x="7" y="7" width="13" height="13" rx="1.5"/><path d="M4 17V5a1 1 0 0 1 1-1h12"/></svg></button>
+      <button id="btn-tray" class="tb-btn" title="隐藏到托盘"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></button>
+      <button id="btn-close" class="tb-btn tb-close" title="关闭（最小化到托盘）"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+  </header>
+  <!-- 备份进度条（备份中/完成动画） -->
+  <div id="progress-bar" class="progress-bar" data-state="idle"><div class="progress-fill"></div></div>
+
+  <div id="layout">
+    <!-- 侧边导航 -->
+    <nav id="sidebar" aria-label="主导航">
+      <div class="sidebar-brand"><img src="icon.png" alt="" /><strong>Backy</strong></div>
+      <button class="nav-item active" data-view="dashboard" aria-current="page">
+        <span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span>概览
+      </button>
+      <button class="nav-item" data-view="tasks">
+        <span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg></span>备份任务
+      </button>
+      <button class="nav-item" data-view="logs">
+        <span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg></span>运行日志
+      </button>
+      <button class="nav-item" data-view="stats">
+        <span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg></span>统计
+      </button>
+      <button class="nav-item" data-view="settings">
+        <span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v3M12 20v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M1 12h3M20 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg></span>设置
+      </button>
+      <button class="nav-item" data-view="about">
+        <span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5"/><circle cx="12" cy="7.6" r="0.9" fill="currentColor" stroke="none"/></svg></span>关于
+      </button>
+      <div class="nav-footer"><span class="local-dot"></span> 文件备份</div>
+    </nav>
+
+    <main id="main">
+      <header class="page-header"><div><h1 id="page-title">备份概览</h1><p id="page-description">查看备份状态与最近的文件变化。</p></div></header>
+      <div id="init-notice" class="inline-notice" role="status">正在读取备份配置…</div>
+      <!-- 概览 -->
+      <section id="view-dashboard" class="view active">
+        <div class="hero-grid">
+          <div class="card status-card">
+            <div id="status-orb" class="orb" aria-hidden="true">
+              <svg viewBox="0 0 80 72" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <g class="motion-idle"><g class="resting-file"><path d="M23 16h24l10 10v27H23z" fill="var(--card)"/><path d="M47 16v10h10M30 34h19M30 41h13"/></g><path d="M18 57h44" stroke="var(--border)"/></g>
+                <g class="motion-wait"><circle cx="40" cy="35" r="21"/><path d="M40 18v3M57 35h-3M40 52v-3M23 35h3" stroke="var(--muted)"/><g class="clock-hand"><path d="M40 23v12l8 5"/></g><circle cx="40" cy="35" r="2" fill="currentColor"/></g>
+                <g class="motion-run"><g class="flying-file"><path d="M17 15h13l5 5v16H17z" fill="var(--card)"/><path d="M30 15v5h5M22 25h7M22 29h7"/></g><g class="flying-file second"><path d="M17 15h13l5 5v16H17z" fill="var(--card)"/><path d="M30 15v5h5M22 25h7M22 29h7"/></g><g class="receiving-tray"><path d="M17 45h12l4 6h14l4-6h12v13H17z" fill="var(--accent-soft)"/></g></g>
+                <g class="motion-done"><circle cx="40" cy="35" r="22" fill="var(--accent-soft)" stroke="none"/><path class="done-check" d="m29 35 7 7 15-16"/></g>
+                <g class="motion-error"><circle cx="40" cy="35" r="21"/><path d="M40 23v14M40 45v1"/></g>
+              </svg>
+            </div>
+            <div class="status-info" role="status">
+              <div class="hero-kicker">当前状态</div>
+              <div id="status-text" class="status-main">正在读取状态</div>
+              <div id="status-sub" class="status-sub">定时备份未启用</div>
+            </div>
+            <div class="status-actions">
+              <button id="btn-run-now" class="btn primary">立即备份</button>
+              <button id="btn-upload-quark" class="btn" title="上传已选择“备份到夸克”的任务">上传夸克</button>
+              <button id="btn-pause-backup" class="btn" hidden>暂停</button>
+              <button id="btn-resume-backup" class="btn primary" hidden>继续</button>
+              <button id="btn-stop-backup" class="btn danger" hidden>停止</button>
+              <button id="btn-resume-last" class="btn primary" hidden>继续上次任务</button>
+              <button id="btn-scheduler" class="btn">启动定时</button>
+            </div>
+            <div id="backup-detail" class="backup-detail" hidden>
+              <div class="backup-detail-head"><span id="backup-stage"></span><span id="backup-task-count"></span></div>
+              <div id="backup-current-name" class="backup-current-name"></div>
+              <div id="backup-current-path" class="backup-current-path"></div>
+              <div id="backup-meter" class="backup-meter" role="progressbar" aria-label="当前阶段的任务处理进度" aria-valuemin="0" aria-valuemax="100">
+                <div id="backup-meter-fill" class="backup-meter-fill"></div>
+              </div>
+              <div id="backup-progress-caption" class="backup-progress-caption"></div>
+            </div>
+          </div>
+          <div class="card countdown-card" data-state="idle">
+            <div class="countdown-head">
+              <div class="card-label"><span class="lbl-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></span>下次自动备份</div>
+              <span id="schedule-state" class="schedule-state">未启用</span>
+            </div>
+            <div class="countdown-display">
+              <div class="countdown-copy">
+                <div id="countdown" class="countdown">--:--</div>
+                <div class="schedule-summary">
+                  <span class="schedule-dot" aria-hidden="true"></span>
+                  <span id="countdown-sub" class="status-sub">定时未启用</span>
+                </div>
+              </div>
+              <div class="countdown-dial" aria-hidden="true">
+                <span class="countdown-orbit orbit-one"></span>
+                <span class="countdown-orbit orbit-two"></span>
+                <svg viewBox="0 0 80 80" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+                  <path class="dial-ticks" d="M40 16v3M64 40h-3M40 64v-3M16 40h3"/>
+                  <path d="M40 26v14l10 6"/>
+                  <circle cx="40" cy="40" r="2.5" fill="currentColor" stroke="none"/>
+                </svg>
+              </div>
+            </div>
+            <div class="schedule-meta">
+              <span>执行规则</span>
+              <strong id="schedule-meta-value">等待开启</strong>
+            </div>
+            <button class="text-btn" data-goto="settings">调整备份计划 <span aria-hidden="true">↗</span></button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div class="card-label"><span class="lbl-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15l2 2 4-4"/></svg></span>最近一次备份结果</div>
+            <div id="last-time" class="muted">暂无记录</div>
+          </div>
+          <div id="result-grid" class="stat-grid">
+            <div class="stat"><span class="stat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></span><div class="stat-num" id="st-copied">-</div><div class="stat-label">新增 / 更新</div></div>
+            <div class="stat"><span class="stat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><div class="stat-num" id="st-skipped">-</div><div class="stat-label">跳过（无变化）</div></div>
+            <div class="stat"><span class="stat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg></span><div class="stat-num" id="st-saved">-</div><div class="stat-label">节省空间</div></div>
+            <div class="stat"><span class="stat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 8l5-5 5 5"/><path d="M12 3v12"/></svg></span><div class="stat-num" id="st-transferred">-</div><div class="stat-label">传输量</div></div>
+            <div class="stat"><span class="stat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></span><div class="stat-num" id="st-deleted">-</div><div class="stat-label">清理过期项</div></div>
+            <div class="stat"><span class="stat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span><div class="stat-num" id="st-errors">-</div><div class="stat-label">错误</div></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div class="card-label">备份任务 <span id="task-count" class="count-badge">0</span></div>
+            <button class="btn small" data-goto="tasks">管理任务</button>
+          </div>
+          <div id="dash-tasks" class="task-rows"></div>
+        </div>
+      </section>
+
+      <!-- 任务管理 -->
+      <section id="view-tasks" class="view">
+        <div class="card">
+          <div class="card-head">
+            <div class="card-label"><span class="lbl-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg></span>备份任务列表</div>
+            <button id="btn-add-task" class="btn primary small">+ 添加任务</button>
+          </div>
+          <div class="inline-notice task-guidance">
+            <p>“备份”只运行本地任务。“备份到夸克”开关自动保存，点击“上传夸克”时生效。</p>
+            <p id="task-quark-guidance" role="status"></p>
+            <button class="text-btn" data-goto="settings">前往设置，配置夸克同步 ↗</button>
+          </div>
+          <div id="task-list" class="task-list"></div>
+        </div>
+      </section>
+
+      <!-- 日志 -->
+      <section id="view-logs" class="view">
+        <div class="card log-card">
+          <div class="card-head">
+            <div class="card-label"><span class="lbl-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg></span>运行日志</div>
+            <div class="row-gap">
+              <button id="btn-copy-log" class="btn small">复制</button>
+              <button id="btn-clear-log" class="btn small">清空显示</button>
+            </div>
+          </div>
+          <div id="log-panel" class="log-panel" tabindex="0" aria-label="运行日志内容"></div>
+        </div>
+      </section>
+
+      <!-- 统计 -->
+      <section id="view-stats" class="view">
+        <div class="card">
+          <div class="card-head">
+            <div class="card-label"><span class="lbl-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg></span>累计统计</div>
+            <button id="btn-clear-history" class="btn small">清空历史</button>
+          </div>
+          <div id="stats-summary" class="stat-grid stat-summary">
+            <div class="stat"><span class="stat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg></span><div class="stat-num" id="sum-count">-</div><div class="stat-label">累计备份次数</div></div>
+            <div class="stat"><span class="stat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></span><div class="stat-num" id="sum-copied">-</div><div class="stat-label">累计更新文件</div></div>
+            <div class="stat"><span class="stat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 8l5-5 5 5"/><path d="M12 3v12"/></svg></span><div class="stat-num" id="sum-transferred">-</div><div class="stat-label">累计传输量</div></div>
+            <div class="stat"><span class="stat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg></span><div class="stat-num" id="sum-saved">-</div><div class="stat-label">累计节省空间</div></div>
+            <div class="stat"><span class="stat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></span><div class="stat-num" id="sum-avg-duration">-</div><div class="stat-label">平均耗时</div></div>
+            <div class="stat"><span class="stat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><div class="stat-num" id="sum-success-rate">-</div><div class="stat-label">成功率</div></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-label"><span class="lbl-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg></span>备份趋势（最近 20 次）</div>
+          <div id="stats-trend" class="stats-trend"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div class="card-label"><span class="lbl-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></span>历史记录</div>
+            <div id="stats-total" class="muted"></div>
+          </div>
+          <div class="stats-table-wrap">
+            <table class="stats-table">
+              <thead>
+                <tr>
+                  <th>完成时间</th>
+                  <th>方式</th>
+                  <th>更新文件</th>
+                  <th>跳过</th>
+                  <th>传输量</th>
+                  <th>节省空间</th>
+                  <th>耗时</th>
+                  <th>状态</th>
+                </tr>
+              </thead>
+              <tbody id="stats-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- 设置 -->
+      <section id="view-settings" class="view">
+        <div class="card">
+          <div class="card-head">
+            <div class="card-label"><span class="lbl-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></span>定时计划</div>
+            <div id="sched-desc" class="muted"></div>
+          </div>
+          <div class="seg" id="sched-mode">
+            <button class="seg-btn" data-mode="interval">按间隔</button>
+            <button class="seg-btn" data-mode="daily">每天定时</button>
+            <button class="seg-btn" data-mode="weekly">每周指定</button>
+          </div>
+
+          <div class="pane" id="pane-interval">
+            <div class="inline-row">
+              <span class="muted">每隔</span>
+              <input id="set-interval" class="mini" type="number" min="1" max="14400" aria-label="备份间隔（分钟）" />
+              <span class="muted">分钟执行一次</span>
+            </div>
+          </div>
+
+          <div class="pane hidden" id="pane-daily">
+            <div class="muted mb">每天在以下时刻执行（可多个）：</div>
+            <div id="daily-chips" class="chips"></div>
+            <div class="row-gap mt">
+              <input id="daily-add" class="time-input" type="time" value="09:00" aria-label="添加每日备份时刻" />
+              <button id="daily-add-btn" class="btn small">添加时刻</button>
+            </div>
+          </div>
+
+          <div class="pane hidden" id="pane-weekly">
+            <div class="muted mb">选择星期：</div>
+            <div id="week-chips" class="chips"></div>
+            <div class="row-gap mt">
+              <span class="muted">执行时间</span>
+              <input id="weekly-time" class="time-input" type="time" aria-label="每周备份时刻" />
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-label"><span class="lbl-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v3M12 20v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M1 12h3M20 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg></span>备份设置</div>
+          <div class="form-row">
+            <label class="switch-row">
+              <input id="set-hash" type="checkbox" />
+              <span>按文件内容判断是否需要更新</span>
+            </label>
+            <p class="muted form-hint">比较文件内容的哈希值，内容未变化时跳过复制，减少重复备份。</p>
+          </div>
+          <div class="form-row">
+            <label class="switch-row">
+              <input id="set-dryrun" type="checkbox" />
+              <span>演练模式：预览本次备份会做哪些更改</span>
+            </label>
+            <p class="muted form-hint">只扫描和统计，不复制、不删除文件，也不上传到夸克。结果可在运行日志中查看。</p>
+          </div>
+          <div class="form-row">
+            <label class="switch-row">
+              <input id="set-notify" type="checkbox" />
+              <span>备份完成后弹出系统通知</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="card" id="exclude-settings">
+          <div class="card-label">备份排除</div>
+          <div class="form-row">
+            <label for="exclude-patterns">不需要备份的文件或目录</label>
+            <p id="exclude-hint" class="muted form-hint">每行一条，例如 node_modules、.git、.svn 或 *.log。匹配所有层级的名称，区分大小写；排除目录时跳过整个目录。不支持填写路径。</p>
+            <textarea id="exclude-patterns" rows="8" spellcheck="false" aria-describedby="exclude-hint exclude-scope" placeholder="node_modules&#10;.git&#10;.svn&#10;*.log"></textarea>
+          </div>
+          <div class="row-gap" aria-label="添加常用排除规则">
+            <span class="muted">快速添加</span>
+            <button class="btn small" data-exclude="node_modules">node_modules</button>
+            <button class="btn small" data-exclude=".git">.git</button>
+            <button class="btn small" data-exclude=".svn">.svn</button>
+            <button class="btn small" data-exclude="*.log">*.log</button>
+            <button class="btn small" data-exclude="*.tmp">*.tmp</button>
+          </div>
+          <p id="exclude-scope" class="muted form-hint">保存后从下一次运行生效，适用于所有本地备份和夸克上传。清空并保存表示不排除任何名称。已有排除项及包含它们的过期目录会保留；以点开头的隐藏名称需要显式规则，例如 .env*。</p>
+          <div class="row-gap">
+            <button id="btn-save-excludes" class="btn primary small">保存排除规则</button>
+            <span id="exclude-message" class="muted" role="status" aria-live="polite"></span>
+          </div>
+        </div>
+
+        <div class="card" id="quark-settings">
+          <div class="card-label">夸克网盘</div>
+          <p class="muted">完成扫码并验证连接 → 开启下方同步总开关 → 在任务列表打开“备份到夸克”。</p>
+          <div class="form-row inline">
+            <span id="quark-status" class="muted" role="status">未登录</span>
+            <div class="row-gap">
+              <button id="btn-quark-login" class="btn small">扫码登录夸克</button>
+              <button id="btn-quark-finish" class="btn primary small" hidden>已登录，验证并连接</button>
+            </div>
+          </div>
+          <div class="form-row">
+            <label class="switch-row"><input id="set-quark" type="checkbox" /><span>启用夸克同步（总开关）</span></label>
+            <p class="muted form-hint">仅上传已开启“备份到夸克”的任务，每个任务先打包成一个 ZIP；相同内容不重复上传，内容变化后保留新版本。关闭总开关会暂停全部上传，并保留各任务的选择。</p>
+            <p id="quark-task-summary" class="muted"></p>
+            <button class="text-btn" data-goto="tasks">选择上传任务 ↗</button>
+          </div>
+          <p class="muted">默认上传到网盘根目录，并按本地备份文件夹名称创建子目录。</p>
+          <details id="quark-directory" class="quark-directory">
+            <summary>自定义上传目录（可选）</summary>
+            <div class="form-row">
+              <label for="quark-root">目标目录 ID · 留空使用网盘根目录</label>
+              <div class="input-with-btn"><input id="quark-root" class="path-code" type="text" placeholder="留空即可，无需填写 0" /><button id="btn-save-quark" class="btn small">保存目录</button></div>
+            </div>
+          </details>
+        </div>
+
+        <div class="card">
+          <div class="card-label"><span class="lbl-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51z"/></svg></span>应用行为</div>
+          <div class="form-row">
+            <label class="switch-row">
+              <input id="set-tray" type="checkbox" />
+              <span>关闭窗口时保留在系统托盘运行</span>
+            </label>
+            <p class="muted form-hint">可从右下角托盘图标重新打开窗口或退出程序。备份进行中，关闭窗口也会保留后台运行。</p>
+          </div>
+          <div class="form-row">
+            <label class="switch-row">
+              <input id="set-autostart" type="checkbox" />
+              <span>开机自动启动</span>
+            </label>
+          </div>
+          <div class="form-row">
+            <label class="switch-row">
+              <input id="set-autobackup" type="checkbox" />
+              <span>启动应用后自动开始定时备份</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-label"><span class="lbl-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a9 9 0 1 0 0 18c1.5 0 2.6-1 2.6-2.3 0-.6-.2-1.1-.6-1.5-.4-.4-.6-1-.6-1.5 0-1.3 1.1-2.3 2.6-2.3H18a3 3 0 0 0 3-3c0-3.9-4-7-9-7z"/><circle cx="7.5" cy="11.5" r="1"/><circle cx="10.5" cy="7.5" r="1"/><circle cx="14.5" cy="7.5" r="1"/></svg></span>外观主题</div>
+          <div class="muted mb">选择喜欢的浅色外观，立即预览并自动保存。</div>
+          <div class="theme-grid" id="theme-grid">
+            <button class="theme-card" data-theme="graphite">
+              <span class="theme-swatch" data-theme="graphite"><i></i><i></i><i></i></span>
+              <span class="theme-name">素白</span>
+            </button>
+            <button class="theme-card" data-theme="ocean">
+              <span class="theme-swatch" data-theme="ocean"><i></i><i></i><i></i></span>
+              <span class="theme-name">雾蓝</span>
+            </button>
+            <button class="theme-card" data-theme="forest">
+              <span class="theme-swatch" data-theme="forest"><i></i><i></i><i></i></span>
+              <span class="theme-name">鼠尾草</span>
+            </button>
+            <button class="theme-card" data-theme="plum">
+              <span class="theme-swatch" data-theme="plum"><i></i><i></i><i></i></span>
+              <span class="theme-name">暖纸</span>
+            </button>
+            <button class="theme-card" data-theme="calm">
+              <span class="theme-swatch" data-theme="calm"><i></i><i></i><i></i></span>
+              <span class="theme-name">浅杏</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-label"><span class="lbl-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg></span>数据</div>
+          <div class="form-row inline">
+            <span class="muted">备份状态记录文件</span>
+            <p class="muted form-hint">用于判断哪些文件需要更新。通常无需修改；如需迁移，请选择源目录和备份目录之外的位置。</p>
+            <div class="row-gap">
+              <input id="state-file" class="path-code" type="text" aria-label="增量状态文件路径" style="min-width:0;flex:1;width:100%" />
+              <button id="btn-select-state" class="btn small">选择目录</button>
+              <button id="btn-save-state" class="btn small">保存路径</button>
+              <button id="btn-open-state" class="btn small">打开所在文件夹</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 关于 -->
+      <section id="view-about" class="view">
+        <div class="card about-hero">
+          <img class="about-logo" src="icon.png" alt="Backy" />
+          <div class="about-headline">
+            <h2>Backy <span id="about-version" class="about-version">-</span></h2>
+            <p class="muted">基于 Tauri 2 + Rust 的增量备份桌面工具，支持定时调度、镜像清理、演练模式与夸克网盘同步。</p>
+            <div class="about-actions">
+              <button id="btn-about-repo" class="btn small">打开 GitHub 仓库</button>
+              <button id="btn-about-changelog" class="btn small">查看升级日志</button>
+              <button id="btn-about-copy" class="btn small">复制版本信息</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-label"><span class="lbl-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5"/><circle cx="12" cy="7.6" r="0.9" fill="currentColor" stroke="none"/></svg></span>应用信息</div>
+          <dl class="about-grid">
+            <div><dt>版本</dt><dd id="about-version-cell">-</dd></div>
+            <div><dt>构建类型</dt><dd id="about-build">-</dd></div>
+            <div><dt>应用标识</dt><dd id="about-identifier">-</dd></div>
+            <div><dt>许可证</dt><dd id="about-license">MIT</dd></div>
+            <div class="about-wide"><dt>GitHub 仓库</dt><dd><a id="about-repo-link" href="#" rel="noreferrer">-</a></dd></div>
+            <div class="about-wide"><dt>数据目录</dt><dd class="about-path-row"><span id="about-datadir" class="path-code">-</span><button id="btn-about-data" class="btn small">打开</button></dd></div>
+          </dl>
+          <p class="muted form-hint">数据目录存放备份配置、增量状态与历史记录。开发模式下为项目根目录，正式版沿用 <span class="path-code">%APPDATA%\incremental-backup-assistant</span>。</p>
+        </div>
+
+        <div class="card" id="about-changelog-card">
+          <div class="card-label"><span class="lbl-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v5l3 2"/><circle cx="12" cy="12" r="9"/></svg></span>升级日志</div>
+          <div id="about-changelog" class="timeline"></div>
+          <p class="muted form-hint">完整历史与提交记录见 GitHub 仓库。</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- 即时保存提示 -->
+  <div id="saved-toast" class="saved-toast" role="status">已保存</div>
+
+  <!-- 任务编辑弹窗 -->
+  <div id="modal-mask" class="modal-mask hidden">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-caption" aria-describedby="modal-hint">
+      <div class="modal-title" id="modal-caption">添加备份任务</div>
+      <p class="modal-description">选择要备份的文件夹和本地存放位置，保存后可手动运行或按计划执行。</p>
+      <div class="form-row">
+        <label for="modal-source">源目录 · 要备份的文件夹</label>
+        <div class="input-with-btn">
+          <input id="modal-source" type="text" placeholder="例如 D:\projectCode" />
+          <button id="modal-pick-source" class="btn small">选择</button>
+        </div>
+      </div>
+      <div class="form-row">
+        <label for="modal-backup">目标目录 · 备份存放的位置</label>
+        <div class="input-with-btn">
+          <input id="modal-backup" type="text" placeholder="例如 E:\公司项目代码" />
+          <button id="modal-pick-backup" class="btn small">选择</button>
+        </div>
+      </div>
+      <div class="form-row">
+        <label class="switch-row"><input id="modal-quark" type="checkbox" /><span>本地备份完成后，将此任务上传到夸克网盘</span></label>
+        <p id="modal-quark-hint" class="muted"></p>
+      </div>
+      <p id="modal-hint" class="inline-notice">本地备份采用镜像同步：源目录中删除的文件，也会从本地目标目录删除。请使用专用备份文件夹，不要混放其他文件。</p>
+      <p id="modal-error" class="field-error" role="alert" hidden></p>
+      <div class="modal-actions">
+        <button id="modal-cancel" class="btn">取消</button>
+        <button id="modal-save" class="btn primary">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="changelog.js"></script>
+  <script src="tauri-bridge.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

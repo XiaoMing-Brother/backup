@@ -1,0 +1,6 @@
+{
+  "identifier": "main",
+  "description": "Local application window events and window controls",
+  "windows": ["main"],
+  "permissions": ["core:default", "core:window:allow-start-dragging"]
+}

@@ -1,0 +1,30 @@
+# --- 依赖与构建产物 ---
+node_modules/
+src-tauri/target/
+src-tauri/gen/
+tools/msvc-libs/
+release/
+artifacts/
+
+# --- 开发期运行数据 ---
+# 开发模式（debug 构建）会把数据写在项目根目录，正式版走 %APPDATA%。
+backup.config.json
+backup-state.json
+backup-history.json
+
+# --- 本地工具目录 ---
+.ccgui/
+.vscode/
+.idea/
+.workbuddy/
+
+# --- 杂项 ---
+*.log
+*.tmp
+*.temp
+.env*
+*.bak
+*.swp
+*.swo
+Thumbs.db
+Desktop.ini

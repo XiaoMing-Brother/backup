@@ -1,9 +1,19 @@
 {
+  "name": "backy",
+  "version": "1.1.38",
+  "description": "基于 Tauri 的增量备份桌面工具，支持定时/即时/任务调度。",
+  "author": "local",
   "type": "module",
-  "dependencies": {
-    "chalk": "^5.4.1",
-    "crypto": "^1.0.1",
-    "fnmatch": "^1.0.2",
-    "minimatch": "^10.0.1"
+  "scripts": {
+    "start": "tauri dev",
+    "test": "cargo test --manifest-path src-tauri/Cargo.toml",
+    "check": "node --check app/renderer/app.js && node --check app/renderer/tauri-bridge.js && cargo check --manifest-path src-tauri/Cargo.toml",
+    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
+    "pack": "node tools/tauri.cjs build --no-bundle",
+    "dist": "node tools/tauri.cjs build",
+    "tauri": "node tools/tauri.cjs"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4"
   }
 }
