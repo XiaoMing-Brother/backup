@@ -2,9 +2,19 @@
 
 基于 Tauri 2 + Rust 的 Windows 桌面工具，支持增量备份、定时调度、镜像清理、演练模式和托盘常驻。
 
+## 下载
+
+不用自己编译，直接安装：
+
+- **[最新版本](https://github.com/XiaoMing-Brother/backup/releases/latest)**（仓库右侧 Releases 区块同）
+- 安装版 `Backy_<版本>_x64-setup.exe`（NSIS，推荐）
+- 免安装版 `Backy_<版本>.exe`，双击即可运行
+
+支持 Windows 10/11 x64。历史版本见 [Releases](https://github.com/XiaoMing-Brother/backup/releases)。
+
 ## 运行
 
-本次保留的主程序和安装包位于 `release/`。运行需要 Windows 10/11 和 WebView2；安装包会在缺少 WebView2 时联网下载。
+运行需要 Windows 10/11 和 WebView2；安装包会在缺少 WebView2 时联网下载。仓库源码里的 `release/` 只是本地归档目录，已在 `.gitignore` 中，不随 Git 分发，要分发请走 Releases。
 
 ## 开发与验证
 
