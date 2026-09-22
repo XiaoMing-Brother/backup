@@ -55,6 +55,46 @@ const fixture = (version) => {
   };
 };
 
+// 真实使用场景：绝大多数增量备份传输量为 0，只有偶尔几次有数据。
+// 这是 1.1.42 用户实际反馈「看不到折线」的场景，必须单独覆盖 ——
+// 旧实现用 val>0 过滤，19 个零点被丢掉只剩 1 个点，折线整条不绘制。
+const sparseTrend = async (evaluate, assert, shot) => {
+  const now = Date.now();
+  const history = [];
+  for (let i = 0; i < 20; i++) {
+    history.push({
+      success: true, filesCopied: 0, filesSkipped: 320, totalBytes: 0,
+      savedBytes: 0, errors: 0, itemsDeleted: 0,
+      finishedAt: now - (20 - i) * 3600000, durationMs: 900,
+    });
+  }
+  // 只有最后一次有传输量（模拟用户真实历史：19 次空跑 + 1 次有数据）
+  history[19].totalBytes = 13221497;
+  history[19].filesCopied = 42;
+
+  await evaluate(`(()=>{switchView('stats');S.history=${JSON.stringify(history)};renderStats();})()`);
+  await pause(1500);
+  const r = await evaluate(`(()=>{const box=document.querySelector('#stats-trend');const s=box.querySelector('.trend-line-svg');return {
+    exists:!!s,
+    cols:box.querySelectorAll('.trend-col').length,
+    dots:s?s.querySelectorAll('circle').length:0,
+    paths:s?s.querySelectorAll('path').length:0,
+    lines:s?s.querySelectorAll('line').length:0,
+    hasPathD:s?(s.querySelector('path[fill="none"]')||{}).getAttribute?s.querySelector('path[fill="none"]').getAttribute('d').length:0:0,
+    scrollW:box.scrollWidth, clientH:box.clientHeight,
+    svgW:s?parseFloat(s.style.width):0, svgH:s?parseFloat(s.style.height):0};})()`);
+  assert.ok(r.exists, '【稀疏数据】折线 SVG 必须存在 —— 19 个零点 + 1 个有值的真实场景');
+  assert.equal(r.cols, 20, '【稀疏数据】应有 20 根柱子');
+  assert.equal(r.dots, 20, `【稀疏数据】零点也必须有点，应为 20，实际 ${r.dots}`);
+  assert.equal(r.paths, 2, '【稀疏数据】面积 + 折线两条 path');
+  assert.equal(r.lines, 1, '【稀疏数据】应有一条零值基准线');
+  assert.ok(r.hasPathD > 40, '【稀疏数据】折线 path 必须有实际线段长度');
+  assert.equal(r.svgW, r.scrollW, '【稀疏数据】宽度应与容器一致');
+  assert.equal(r.svgH, r.clientH, '【稀疏数据】高度应与容器一致');
+  console.log('  ✓ 稀疏数据（19 零点 + 1 有值）折线正常绘制:', JSON.stringify(r));
+  await shot('trend-sparse');
+};
+
 (async () => {
   const temporary = await smokeTemp.create('backy-ui-');
   const profile = temporary.dir;
@@ -101,8 +141,8 @@ const fixture = (version) => {
     })()`);
     assert.ok(svg, 'trend-line-svg 必须存在');
     assert.equal(svg.cols, 12, '12 根柱子');
-    // 12 轮里 1 轮 totalBytes=0 被 val>0 过滤 → 11 个圆点
-    assert.equal(svg.circles, 11, `圆点数应为 11，实际 ${svg.circles}`);
+    // 12 轮里 1 轮 totalBytes=0，修掉 val>0 过滤后零点同样参与连线
+    assert.equal(svg.circles, 12, `每根柱子都应有点，实际 ${svg.circles}`);
     assert.equal(svg.paths, 2, '面积 + 折线两条 path');
     assert.equal(svg.failDots, 2, '两轮失败应有两个红色圆点');
     console.log('  ✓ 折线已绘制:', JSON.stringify(svg));
@@ -115,19 +155,27 @@ const fixture = (version) => {
     console.log('  ✓ 尺寸与容器一致，viewBox =', svg.viewBox);
     await shot('trend-line-1120');
 
-    // 3) 圆点坐标必须落在柱子中心 / 柱顶（x 对位）
-    const align = await evaluate(`(()=>{const box=document.querySelector('#stats-trend');const s=box.querySelector('.trend-line-svg');const cs=getComputedStyle(box);const padTop=parseFloat(cs.paddingTop)||16;const chartBottom=box.clientHeight-48;
+    // 3) 每个点必须落在柱子中心 / 柱顶之上 baselineLift（含零点柱，零点柱有 min-height:3px）
+    const align = await evaluate(`(()=>{const box=document.querySelector('#stats-trend');const s=box.querySelector('.trend-line-svg');const cs=getComputedStyle(box);const padTop=parseFloat(cs.paddingTop)||16;const chartBottom=box.clientHeight-48;const LIFT=14;
       const dots=[...s.querySelectorAll('circle')].map(c=>({x:parseFloat(c.getAttribute('cx')),y:parseFloat(c.getAttribute('cy'))}));
-      const cols=[...box.querySelectorAll('.trend-col')];const bars=[...box.querySelectorAll('.trend-bar')];
-      let maxDx=0,maxDy=0;
-      cols.forEach((col,i)=>{const bar=col.querySelector('.trend-bar');if(!bar||!bar.offsetHeight)return;
-        const ex=col.offsetLeft+col.offsetWidth/2, ey=chartBottom-padTop-bar.offsetHeight;
-        const d=dots.find(p=>Math.abs(p.x-ex)<0.6);if(!d)return;
-        maxDx=Math.max(maxDx,Math.abs(d.x-ex));maxDy=Math.max(maxDy,Math.abs(d.y-ey));});
-      return {maxDx,maxDy,dots:dots.length};})()`);
+      const cols=[...box.querySelectorAll('.trend-col')];let maxDx=0,maxDy=0,matched=0,unmatched=0;
+      cols.forEach((col)=>{const bar=col.querySelector('.trend-bar');if(!bar||!bar.offsetHeight)return;
+        const ex=col.offsetLeft+col.offsetWidth/2, ey=chartBottom-padTop-bar.offsetHeight-LIFT;
+        const d=dots.find(p=>Math.abs(p.x-ex)<0.6);
+        if(!d){unmatched++;return;}
+        matched++;maxDx=Math.max(maxDx,Math.abs(d.x-ex));maxDy=Math.max(maxDy,Math.abs(d.y-ey));});
+      const base=box.clientHeight-48;
+      const baseLine=s.querySelector('line');
+      return {maxDx,maxDy,dots:dots.length,cols:cols.length,matched,unmatched,
+        hasBaseline:!!baseLine,
+        baselineY:baseLine?parseFloat(baseLine.getAttribute('y1')):null,expectBaselineY:base};})()`);
+    assert.equal(align.unmatched, 0, `每根柱子都应有对应圆点，未匹配 ${align.unmatched} 个`);
+    assert.equal(align.matched, align.cols, '圆点数应等于柱子数');
     assert.ok(align.maxDx < 0.6, `圆点横向应与柱心对齐，实测最大偏差 ${align.maxDx}`);
-    assert.ok(align.maxDy < 0.6, `圆点纵向应贴合柱顶，实测最大偏差 ${align.maxDy}`);
-    console.log('  ✓ 圆点对位正确，最大偏差 dx=' + align.maxDx.toFixed(2) + ' dy=' + align.maxDy.toFixed(2));
+    assert.ok(align.maxDy < 0.6, `圆点纵向应贴合柱顶上方 baselineLift，实测最大偏差 ${align.maxDy}`);
+    assert.ok(align.hasBaseline, '应绘制零值基准线');
+    assert.ok(Math.abs(align.baselineY - align.expectBaselineY) < 0.6, `基准线应画在柱底 y=${align.expectBaselineY}，实际 ${align.baselineY}`);
+    console.log('  ✓ 圆点对位正确（' + align.matched + '/' + align.cols + '），最大偏差 dx=' + align.maxDx.toFixed(2) + ' dy=' + align.maxDy.toFixed(2) + '；基准线 y=' + align.baselineY);
 
     // 4) 真正会读到脏尺寸的场景：视图切换动画进行中就收到 history。
     //    view-enter 动画带 translateY(5px)，动画期 clientHeight 与最终值不同；
@@ -153,10 +201,13 @@ const fixture = (version) => {
     assert.equal(after2, 1, `反复切换后 SVG 只应有一个，实际 ${after2}`);
     console.log('  ✓ 反复切换视图未叠加 SVG');
 
+    // 6) 稀疏数据：真实使用场景（绝大多数增量备份传输量为 0）
+    await sparseTrend(evaluate, assert, shot);
+
     assert.equal(errors.length, 0, '不应有运行时异常: ' + JSON.stringify(errors));
     assert.equal(await evaluate('document.querySelector("#main").scrollWidth <= document.querySelector("#main").clientWidth'), true, 'stats 视图无横向溢出');
 
-    console.log(JSON.stringify({ ok: true, checks: ['折线绘制(12轮/11点/2失败点)', '尺寸与容器一致', '圆点对位', 'resize 重算', '反复切换不叠加', '无运行时异常'], screenshots: ['trend-line-1120.png', 'trend-line-920.png'] }, null, 2));
+    console.log(JSON.stringify({ ok: true, checks: ['折线绘制(12轮/12点/2失败点)', '尺寸与容器一致', '圆点对位', '动画期渲染尺寸稳定', '反复切换不叠加', '稀疏数据(19零点+1有值)', '无运行时异常'], screenshots: ['trend-line-1120.png', 'trend-line-920.png', 'trend-sparse.png'] }, null, 2));
     try { ws.send(JSON.stringify({ id: 999999, method: 'Browser.close' })); } catch {}
   } finally {
     await pause(200); ws?.close();

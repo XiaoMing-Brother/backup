@@ -409,24 +409,31 @@ function drawTrendLine(container, recent) {
   const totalH = container.clientHeight;
   const totalW = container.scrollWidth;
   const chartBottom = totalH - 48;
+  // 零值柱只有 min-height(3px) 高，折线若严格贴柱顶会与那排小横线挤在一起，
+  // 分不清线和柱。这里整体上抬一段，让折线与柱子留出可辨的间隙。
+  const baselineLift = 14;
   const lineColor = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#2e8b57";
 
   const points = [];
   cols.forEach((col, i) => {
     const bar = col.querySelector(".trend-bar");
-    if (!bar) return;
+    if (!bar || !recent[i]) return;
     const barH = bar.offsetHeight;
     const x = col.offsetLeft + col.offsetWidth / 2;
-    const y = chartBottom - padTop - barH;
-    const val = (recent[i] && recent[i].totalBytes) || 0;
-    if (val > 0) points.push({ x, y, val, success: recent[i].success !== false, index: i });
+    const y = chartBottom - padTop - barH - baselineLift;
+    // 传输量为 0 的轮次同样是有效记录（增量备份没变化时确实是 0），
+    // 必须参与连线，否则折线会断裂、甚至整条不画。
+    points.push({ x, y, val: recent[i].totalBytes || 0, success: recent[i].success !== false, index: i });
   });
   if (points.length < 2) return;
 
   const smoothPath = smoothLine(points);
-  const areaPath = smoothPath + ` L${points[points.length - 1].x},${chartBottom} L${points[0].x},${chartBottom} Z`;
-  // 圆点要给填充色留出可见面积：白描边必须比半径细得多，
-  // 否则 3px 圆 + 1.5px 描边只剩一圈白环，看不出成功/失败配色。
+  // 面积填充到折线的基线（零值点所在高度，已上抬）；
+  // 零值基准线另画在真正的柱底，与折线留出 baselineLift 的间隙，
+  // 否则两者重合会被折线完全盖住，看不出「0 在哪」。
+  const areaBaseY = chartBottom - baselineLift;
+  const areaPath = smoothPath + ` L${points[points.length - 1].x},${areaBaseY} L${points[0].x},${areaBaseY} Z`;
+  const zeroLineY = chartBottom;
   const dotRadius = 3.6;
 
   svg.setAttribute("viewBox", `0 0 ${totalW} ${totalH}`);
@@ -452,6 +459,8 @@ function drawTrendLine(container, recent) {
         <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="${lineColor}" flood-opacity="0.25"/>
       </filter>
     </defs>
+    <!-- 零值基准线：画在真正的柱底，与上抬后的折线留出间隙，标明「这一条水平位置就是 0」 -->
+    <line x1="0" y1="${zeroLineY}" x2="${totalW}" y2="${zeroLineY}" stroke="${lineColor}" stroke-opacity="0.3" stroke-width="1" stroke-dasharray="4 4"/>
     <path d="${areaPath}" fill="url(#trend-fill)"/>
     <path d="${smoothPath}" fill="none" stroke="${lineColor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" filter="url(#trend-shadow)"/>
     ${dots}
