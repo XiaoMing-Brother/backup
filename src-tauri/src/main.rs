@@ -163,7 +163,7 @@ fn live_stats_value(stats: &backup::Stats) -> Value {
     value
 }
 fn update_live_stats(app: &AppHandle, stats: &backup::Stats) {
-    app.state::<Runtime>().0.lock().unwrap().live_stats = Some(stats.clone());
+    app.state::<Runtime>().0.lock().unwrap_or_else(|e| e.into_inner()).live_stats = Some(stats.clone());
 }
 fn publish_logs(app: &AppHandle, entries: Vec<Value>) {
     if entries.is_empty() {
@@ -171,7 +171,7 @@ fn publish_logs(app: &AppHandle, entries: Vec<Value>) {
     }
     {
         let state = app.state::<Runtime>();
-        let mut d = state.0.lock().unwrap();
+        let mut d = state.0.lock().unwrap_or_else(|e| e.into_inner());
         d.logs.extend(entries.iter().cloned());
         let overflow = d.logs.len().saturating_sub(800);
         d.logs.drain(..overflow);
@@ -194,7 +194,7 @@ fn publish_window_visibility(app: &AppHandle) {
 }
 fn publish_status(app: &AppHandle) {
     let state = app.state::<Runtime>();
-    let d = state.0.lock().unwrap();
+    let d = state.0.lock().unwrap_or_else(|e| e.into_inner());
     let payload = status(&d);
     let auto = d.config["autoStart"].as_bool().unwrap_or(false);
     let text = if d.running { "备份中" } else if d.scheduler { "定时运行中" } else { "定时已停止" };
@@ -212,7 +212,7 @@ fn publish_status(app: &AppHandle) {
 fn set_scheduler(app: &AppHandle, enabled: bool) {
     {
         let state = app.state::<Runtime>();
-        let mut d = state.0.lock().unwrap();
+        let mut d = state.0.lock().unwrap_or_else(|e| e.into_inner());
         d.scheduler = enabled;
         d.next = if enabled {
             schedule::next(&d.config, now())
@@ -239,7 +239,7 @@ fn launch_backup(
 ) -> Result<Value, String> {
     let (selected, config, state_file, control, excludes) = {
         let state = app.state::<Runtime>();
-        let mut d = state.0.lock().unwrap();
+        let mut d = state.0.lock().unwrap_or_else(|e| e.into_inner());
         if d.running {
             return Ok(json!({"ok":false,"message":"备份正在进行中"}));
         }
@@ -317,7 +317,7 @@ fn launch_backup(
         }).as_object().unwrap().clone());
         let (persist_error, recovery_error) = {
             let state = app.state::<Runtime>();
-            let mut d = state.0.lock().unwrap();
+            let mut d = state.0.lock().unwrap_or_else(|e| e.into_inner());
             let mut history = d.history.clone();
             history.push(result.clone());
             if history.len() > 500 {
@@ -410,7 +410,7 @@ fn launch_backup(
 #[tauri::command]
 fn get_state(app: AppHandle) -> Value {
     let state = app.state::<Runtime>();
-    let d = state.0.lock().unwrap();
+    let d = state.0.lock().unwrap_or_else(|e| e.into_inner());
     json!({"config":d.config,"status":status(&d),"logs":d.logs,"history":d.history,"liveStats":d.live_stats.as_ref().map(live_stats_value)})
 }
 #[tauri::command]
@@ -421,7 +421,7 @@ fn run_now(app: AppHandle, tasks: Option<Vec<Task>>) -> Result<Value, String> {
 #[tauri::command]
 fn pause_backup(app: AppHandle) -> Result<Value, String> {
     let state = app.state::<Runtime>();
-    let d = state.0.lock().unwrap();
+    let d = state.0.lock().unwrap_or_else(|e| e.into_inner());
     let Some(control) = d.control.as_ref() else {
         return Ok(json!({"ok":false,"message":"当前没有可暂停的任务"}));
     };
@@ -435,7 +435,7 @@ fn pause_backup(app: AppHandle) -> Result<Value, String> {
 #[tauri::command]
 fn resume_backup(app: AppHandle) -> Result<Value, String> {
     let state = app.state::<Runtime>();
-    let d = state.0.lock().unwrap();
+    let d = state.0.lock().unwrap_or_else(|e| e.into_inner());
     let Some(control) = d.control.as_ref() else {
         return Ok(json!({"ok":false,"message":"当前没有可继续的任务"}));
     };
@@ -449,7 +449,7 @@ fn resume_backup(app: AppHandle) -> Result<Value, String> {
 #[tauri::command]
 fn stop_backup(app: AppHandle) -> Result<Value, String> {
     let state = app.state::<Runtime>();
-    let d = state.0.lock().unwrap();
+    let d = state.0.lock().unwrap_or_else(|e| e.into_inner());
     let Some(control) = d.control.as_ref() else {
         return Ok(json!({"ok":false,"message":"当前没有可停止的任务"}));
     };
@@ -464,7 +464,7 @@ fn stop_backup(app: AppHandle) -> Result<Value, String> {
 
 #[tauri::command]
 fn resume_last_backup(app: AppHandle) -> Result<Value, String> {
-    let recovery = app.state::<Runtime>().0.lock().unwrap().recovery.clone();
+    let recovery = app.state::<Runtime>().0.lock().unwrap_or_else(|e| e.into_inner()).recovery.clone();
     let Some(recovery) = recovery else {
         return Ok(json!({"ok":false,"message":"没有可恢复的任务"}));
     };
@@ -495,7 +495,7 @@ fn launch_quark(
 ) -> Result<Value, String> {
     let (uploads, root, cookie, control, excludes) = {
         let state = app.state::<Runtime>();
-        let mut d = state.0.lock().unwrap();
+        let mut d = state.0.lock().unwrap_or_else(|e| e.into_inner());
         if d.running {
             return Ok(json!({"ok":false,"message":"备份或夸克上传正在进行中"}));
         }
@@ -560,10 +560,11 @@ fn launch_quark(
             stats.progress.task_source = task.source.clone();
             stats.progress.current_path = task.backup.clone();
             update_live_stats(&handle, &stats);
-            if let Err(e) = quark::sync_dir(&cookie, Path::new(&task.backup), &root, &excludes, &mut |text| log(&handle, "info", &text), &mut |path, stage, completed| {
+            if let Err(e) = quark::sync_dir(&cookie, Path::new(&task.backup), &root, &excludes, &mut |text| log(&handle, "info", &text), &mut |path, stage, done, total| {
                 stats.progress.stage = stage;
                 stats.progress.current_path = path.to_string_lossy().into_owned();
-                if completed { stats.progress.files_processed += 1; }
+                stats.progress.files_processed = done;
+                stats.progress.files_total = total;
                 update_live_stats(&handle, &stats);
             }, &mut || checkpoint(&handle, &control, &mut announced_pause)) {
                 if e == quark::INTERRUPTED {
@@ -585,7 +586,7 @@ fn launch_quark(
         }).as_object().unwrap().clone());
         let persist_error = {
             let state = handle.state::<Runtime>();
-            let mut d = state.0.lock().unwrap();
+            let mut d = state.0.lock().unwrap_or_else(|e| e.into_inner());
             let mut history = d.history.clone();
             history.push(result.clone());
             if history.len() > 500 { history.drain(..history.len() - 500); }
@@ -657,7 +658,7 @@ async fn quark_login(app: AppHandle) -> Result<Value, String> {
     let handle = app.clone();
     window.on_window_event(move |event| {
         if matches!(event, WindowEvent::Destroyed) {
-            let logged_in = handle.state::<Runtime>().0.lock().unwrap().quark_cookie.is_some();
+            let logged_in = handle.state::<Runtime>().0.lock().unwrap_or_else(|e| e.into_inner()).quark_cookie.is_some();
             push(&handle, "quark:login", json!({"loggedIn":logged_in, "windowOpen":false}));
         }
     });
@@ -668,7 +669,7 @@ async fn quark_login(app: AppHandle) -> Result<Value, String> {
 fn quark_finish_login(app: AppHandle) -> Result<Value, String> {
     {
         let state = app.state::<Runtime>();
-        let mut data = state.0.lock().unwrap();
+        let mut data = state.0.lock().unwrap_or_else(|e| e.into_inner());
         if data.quark_login_checking {
             return Ok(json!({"ok":true, "pending":true}));
         }
@@ -697,10 +698,10 @@ fn quark_finish_login(app: AppHandle) -> Result<Value, String> {
             Ok(cookie)
         })();
 
-        handle.state::<Runtime>().0.lock().unwrap().quark_login_checking = false;
+        handle.state::<Runtime>().0.lock().unwrap_or_else(|e| e.into_inner()).quark_login_checking = false;
         match result {
             Ok(cookie) => {
-                handle.state::<Runtime>().0.lock().unwrap().quark_cookie = Some(cookie);
+                handle.state::<Runtime>().0.lock().unwrap_or_else(|e| e.into_inner()).quark_cookie = Some(cookie);
                 if let Some(login) = handle.get_webview_window("quark-login") {
                     let _ = login.close();
                 }
@@ -710,7 +711,7 @@ fn quark_finish_login(app: AppHandle) -> Result<Value, String> {
             }
             Err(error) => {
                 log(&handle, "error", &format!("夸克网盘登录失败: {error}"));
-                let logged_in = handle.state::<Runtime>().0.lock().unwrap().quark_cookie.is_some();
+                let logged_in = handle.state::<Runtime>().0.lock().unwrap_or_else(|e| e.into_inner()).quark_cookie.is_some();
                 let window_open = handle.get_webview_window("quark-login").is_some();
                 push(&handle, "quark:login", json!({"loggedIn":logged_in, "windowOpen":window_open, "error":error}));
             }
@@ -783,7 +784,7 @@ fn save_config(app: AppHandle, partial: Value) -> Result<Value, String> {
     let reschedule = changes_schedule(&partial);
     let config = {
         let state = app.state::<Runtime>();
-        let mut d = state.0.lock().unwrap();
+        let mut d = state.0.lock().unwrap_or_else(|e| e.into_inner());
         let mut config = d.config.clone();
         let partial = partial.as_object().ok_or("配置必须是对象")?;
         for (key, value) in partial {
@@ -837,7 +838,7 @@ fn apply_autostart(app: &AppHandle, enabled: bool) -> Result<(), String> {
 #[tauri::command]
 fn clear_history(app: AppHandle) -> Result<Value, String> {
     let state = app.state::<Runtime>();
-    let mut d = state.0.lock().unwrap();
+    let mut d = state.0.lock().unwrap_or_else(|e| e.into_inner());
     write_json(&d.dir.join("backup-history.json"), &json!([]))?;
     d.history.clear();
     push(&app, "history", json!([]));
@@ -926,7 +927,7 @@ fn perform_window_action(app: &AppHandle, action: &str) -> Result<bool, String> 
         }
         "isMaximized" => return w.is_maximized().map_err(|e| e.to_string()),
         "quit" => {
-            if app.state::<Runtime>().0.lock().unwrap().running {
+            if app.state::<Runtime>().0.lock().unwrap_or_else(|e| e.into_inner()).running {
                 return Err("备份正在进行，请完成后退出".into());
             }
             app.exit(0);
@@ -1220,7 +1221,7 @@ fn main() {
                             Ok(())
                         }
                         "auto" => {
-                            let enabled = !app.state::<Runtime>().0.lock().unwrap().config
+                            let enabled = !app.state::<Runtime>().0.lock().unwrap_or_else(|e| e.into_inner()).config
                                 ["autoStart"]
                                 .as_bool()
                                 .unwrap_or(false);
@@ -1242,7 +1243,7 @@ fn main() {
                 std::thread::sleep(Duration::from_millis(500));
                 let (due, postponed) = {
                     let state = handle.state::<Runtime>();
-                    let mut d = state.0.lock().unwrap();
+                    let mut d = state.0.lock().unwrap_or_else(|e| e.into_inner());
                     if d.running {
                         if let Some(stats) = &d.live_stats {
                             push(&handle, "stats", live_stats_value(stats));
@@ -1267,7 +1268,7 @@ fn main() {
                     if let Err(e) = launch_backup(&handle, None, "scheduled") {
                         log(&handle, "error", &e);
                         let state = handle.state::<Runtime>();
-                        let mut d = state.0.lock().unwrap();
+                        let mut d = state.0.lock().unwrap_or_else(|e| e.into_inner());
                         d.next = schedule::next(&d.config, now());
                     }
                     publish_status(&handle);
@@ -1280,7 +1281,7 @@ fn main() {
                 let Some(state) = w.try_state::<Runtime>() else {
                     return;
                 };
-                let d = state.0.lock().unwrap();
+                let d = state.0.lock().unwrap_or_else(|e| e.into_inner());
                 if d.config["minimizeToTray"].as_bool().unwrap_or(true) || d.running {
                     drop(d);
                     api.prevent_close();

@@ -165,7 +165,11 @@ temporary.track(child, executable);
     assert.equal(fs.readFileSync(path.join(backup, "hello.txt"), "utf8"), "backup smoke test");
     assert.equal(fs.existsSync(path.join(backup, "stale.txt")), false);
     assert.equal(fs.existsSync(path.join(backup, "ignored.log")), false);
-    assert.ok(JSON.parse(fs.readFileSync(path.join(data, "backup-state.json")))["legacy-file"]);
+    // state 每轮重建：预置的遗留条目会被清掉，只保留本轮真正遍历到的源文件。
+    const rebuiltState = JSON.parse(fs.readFileSync(path.join(data, "backup-state.json")));
+    assert.equal(rebuiltState["legacy-file"], undefined, "rebuilt state drops entries this run never walked");
+    assert.ok(Object.keys(rebuiltState).some((key) => key.endsWith("hello.txt")), "rebuilt state records this run's source files");
+    assert.ok(!Object.keys(rebuiltState).some((key) => key.endsWith("ignored.log")), "excluded files never enter the state");
     const unchangedState = path.join(data, "backup-state.json");
     fs.utimesSync(unchangedState, new Date(100000), new Date(100000));
     const unchangedMtime = fs.statSync(unchangedState).mtimeMs;

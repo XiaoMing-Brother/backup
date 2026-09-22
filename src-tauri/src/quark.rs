@@ -8,7 +8,7 @@ use std::{
     fs,
     io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
-    time::Duration,
+    time::{Duration, SystemTime},
 };
 
 const API: &str = "https://drive-pc.quark.cn/1/clouddrive";
@@ -395,121 +395,194 @@ impl Drive {
     }
 }
 
-fn remote_md5(entry: &Value) -> Option<String> {
-    ["md5", "file_md5", "fileMd5"]
-        .iter()
-        .find_map(|key| entry[*key].as_str())
-        .filter(|hash| !hash.is_empty())
-        .map(|hash| hash.to_ascii_lowercase())
+/// 打包清单里的一条：相对路径、是否目录、大小、修改时间。
+///
+/// 摘要只看这四样、不读文件内容 —— 这正是「内容没变就完全不必压缩」的前提。
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct ManifestEntry {
+    rel: String,
+    is_dir: bool,
+    len: u64,
+    mtime_ms: i64,
+}
+
+/// 待上传目录的清单。同一份清单既决定包名、又决定包里放什么，
+/// 保证「文件名声称的内容」与「实际打包出来的内容」永远一致。
+struct Manifest {
+    source: PathBuf,
+    root: String,
+    entries: Vec<ManifestEntry>,
+}
+
+impl Manifest {
+    /// 清单摘要（SHA-256 取前 128 位）。条目按路径排序后逐条喂入，结果与遍历顺序无关。
+    fn digest(&self) -> String {
+        let mut hasher = Sha256::new();
+        for entry in &self.entries {
+            hasher.update(entry.rel.as_bytes());
+            hasher.update([entry.is_dir as u8]);
+            hasher.update(entry.len.to_le_bytes());
+            hasher.update(entry.mtime_ms.to_le_bytes());
+        }
+        let hex = format!("{:x}", hasher.finalize());
+        hex[..32].to_owned()
+    }
+
+    fn file_name(&self) -> String {
+        format!("Backy-{}.zip", self.digest())
+    }
+}
+
+fn mtime_ms(time: SystemTime) -> i64 {
+    time.duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis() as i64)
+        .unwrap_or_default()
+}
+
+/// 云端是否已经有这份内容。包名本身就是清单摘要，同名即同内容，
+/// 不需要再比对大小或 MD5 —— 也正因为如此，未变化时连压缩都可以跳过。
+fn uploaded_already(entries: &[Value], archive: &str) -> bool {
+    entries.iter().any(|entry| {
+        entry["dir"].as_bool() != Some(true) && entry["file_name"].as_str() == Some(archive)
+    })
 }
 
 struct Archive {
     _temp: tempfile::TempDir,
     path: PathBuf,
     size: u64,
-    md5: String,
-}
-
-impl Archive {
-    fn exists_remotely(&self, entries: &[Value]) -> bool {
-        // 文件名包含整个 ZIP 的 SHA-256；列表不返回 MD5 时仍可识别同一份内容。
-        entries.iter().any(|entry| {
-            entry["dir"].as_bool() != Some(true)
-                && entry["file_name"].as_str() == self.path.file_name().and_then(|s| s.to_str())
-                && entry["size"].as_u64() == Some(self.size)
-                && remote_md5(entry).is_none_or(|hash| hash == self.md5)
-        })
-    }
 }
 
 fn check_control(control: &mut dyn FnMut() -> bool) -> Result<(), String> {
     if control() { Ok(()) } else { Err(INTERRUPTED.into()) }
 }
 
-fn create_archive(
+/// 扫描待上传目录得到清单。只读目录项的元数据、不打开任何文件内容，
+/// 所以比压缩快几个数量级 —— 云端已有同样内容时，整个压缩环节都能省掉。
+fn build_manifest(
     source: &Path,
     excludes: &crate::backup::ExcludeRules,
-    progress: &mut dyn FnMut(&Path, &'static str, bool),
+    progress: &mut dyn FnMut(&Path, &'static str, u64, u64),
     control: &mut dyn FnMut() -> bool,
-) -> Result<Archive, String> {
+) -> Result<Manifest, String> {
     check_control(control)?;
     crate::backup::no_links(source).map_err(|e| format!("检查备份目录失败: {e}"))?;
     let source = fs::canonicalize(source).map_err(|e| format!("读取备份目录失败: {e}"))?;
     if !source.is_dir() {
         return Err("要上传的备份路径不是目录".into());
     }
+    let root = source
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("Backy")
+        .to_owned();
+    let mut entries = Vec::new();
+    collect_manifest(&source, "", excludes, &mut entries, &mut 0, progress, control)?;
+    Ok(Manifest { source, root, entries })
+}
+
+/// done 是已经收录的条目数，用来表示扫描进度；总数此刻还不知道，传 0。
+fn collect_manifest(
+    dir: &Path,
+    prefix: &str,
+    excludes: &crate::backup::ExcludeRules,
+    entries: &mut Vec<ManifestEntry>,
+    done: &mut u64,
+    progress: &mut dyn FnMut(&Path, &'static str, u64, u64),
+    control: &mut dyn FnMut() -> bool,
+) -> Result<(), String> {
+    check_control(control)?;
+    let mut children = fs::read_dir(dir)
+        .map_err(|e| format!("{}: {e}", dir.display()))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    children.sort_by_key(|entry| entry.file_name());
+    for child in children {
+        check_control(control)?;
+        let name = child
+            .file_name()
+            .into_string()
+            .map_err(|_| "文件名不是有效 UTF-8".to_owned())?;
+        if excludes.matches(&name) {
+            continue;
+        }
+        let path = child.path();
+        // 一次 symlink_metadata 就同时拿到「是否链接 / 是否目录 / 大小 / 修改时间」。
+        // 旧实现对每个条目都要走一遍祖先链 no_links，5.3 万个条目在机械硬盘上会
+        // 放大成约 32 万次多余的 stat。
+        let meta = fs::symlink_metadata(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        if crate::backup::is_link(&meta) {
+            return Err(format!("不支持符号链接或目录联接: {}", path.display()));
+        }
+        let rel = if prefix.is_empty() { name.clone() } else { format!("{prefix}/{name}") };
+        *done += 1;
+        progress(&path, "packing", *done, 0);
+        if meta.is_dir() {
+            entries.push(ManifestEntry { rel: rel.clone(), is_dir: true, len: 0, mtime_ms: 0 });
+            collect_manifest(&path, &rel, excludes, entries, done, progress, control)?;
+        } else if meta.is_file() {
+            let modified = meta.modified().map_err(|e| format!("{}: {e}", path.display()))?;
+            entries.push(ManifestEntry { rel, is_dir: false, len: meta.len(), mtime_ms: mtime_ms(modified) });
+        } else {
+            return Err(format!("不支持打包此类型的文件: {}", path.display()));
+        }
+    }
+    Ok(())
+}
+
+/// 按清单打包。写完每个文件后都用清单里的大小和修改时间复核一遍，
+/// 保证「包名声称的内容」和「包里实际装的内容」永远一致。
+fn create_archive(
+    manifest: &Manifest,
+    progress: &mut dyn FnMut(&Path, &'static str, u64, u64),
+    control: &mut dyn FnMut() -> bool,
+) -> Result<Archive, String> {
+    check_control(control)?;
     let temp = tempfile::Builder::new().prefix("backy-quark-").tempdir().map_err(|e| format!("创建临时目录失败: {e}"))?;
-    if fs::canonicalize(temp.path()).map_err(|e| format!("读取临时目录失败: {e}"))?.starts_with(&source) {
+    if fs::canonicalize(temp.path()).map_err(|e| format!("读取临时目录失败: {e}"))?.starts_with(&manifest.source) {
         return Err("压缩包临时目录不能位于待上传目录内".into());
     }
     let path = temp.path().join("archive.zip");
     let mut zip = zip::ZipWriter::new(fs::File::create(&path).map_err(|e| format!("创建压缩包失败: {e}"))?);
-    let root_name = source.file_name().and_then(|s| s.to_str()).unwrap_or("Backy");
-    fn append(
-        zip: &mut zip::ZipWriter<fs::File>,
-        path: &Path,
-        name: &str,
-        excludes: &crate::backup::ExcludeRules,
-        progress: &mut dyn FnMut(&Path, &'static str, bool),
-        control: &mut dyn FnMut() -> bool,
-    ) -> Result<(), String> {
+    // 固定时间、权限，保证同一份内容重新打包也得到逐字节相同的 ZIP。
+    let dir_options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated)
+        .last_modified_time(zip::DateTime::default())
+        .unix_permissions(0o755);
+    zip.add_directory(format!("{}/", manifest.root), dir_options).map_err(|e| e.to_string())?;
+    let total = manifest.entries.len() as u64;
+    for (index, entry) in manifest.entries.iter().enumerate() {
         check_control(control)?;
-        crate::backup::no_links(path).map_err(|e| e.to_string())?;
-        let meta = fs::metadata(path).map_err(|e| format!("{}: {e}", path.display()))?;
-        // 固定时间、权限和排序，保证内容未变化时重新打包也得到相同摘要。
-        let options = zip::write::SimpleFileOptions::default()
-            .compression_method(zip::CompressionMethod::Deflated)
-            .last_modified_time(zip::DateTime::default())
-            .unix_permissions(0o755);
-        progress(path, "packing", false);
-        if meta.is_dir() {
-            zip.add_directory(format!("{name}/"), options).map_err(|e| e.to_string())?;
-            let mut entries = fs::read_dir(path).map_err(|e| e.to_string())?
-                .collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
-            entries.sort_by_key(|entry| entry.file_name());
-            for entry in entries {
-                check_control(control)?;
-                let child_name = entry.file_name().into_string().map_err(|_| "文件名不是有效 UTF-8")?;
-                if excludes.matches(&child_name) { continue; }
-                append(zip, &entry.path(), &format!("{name}/{child_name}"), excludes, progress, control)?;
-            }
-        } else if meta.is_file() {
-            zip.start_file(name, options.unix_permissions(0o644).large_file(meta.len() >= u32::MAX as u64))
-                .map_err(|e| e.to_string())?;
-            let mut file = fs::File::open(path).map_err(|e| e.to_string())?;
-            let mut buffer = [0u8; 64 * 1024];
-            loop {
-                check_control(control)?;
-                let n = file.read(&mut buffer).map_err(|e| format!("{}: {e}", path.display()))?;
-                if n == 0 { break; }
-                zip.write_all(&buffer[..n]).map_err(|e| format!("写入压缩包失败: {e}"))?;
-            }
-            let after = file.metadata().map_err(|e| e.to_string())?;
-            if meta.len() != after.len() || meta.modified().ok() != after.modified().ok() {
-                return Err(format!("打包期间文件发生变化，请重试: {}", path.display()));
-            }
-        } else {
-            return Err(format!("不支持打包此类型的文件: {}", path.display()));
+        let full = manifest.source.join(&entry.rel);
+        progress(&full, "packing", index as u64, total);
+        let name = format!("{}/{}", manifest.root, entry.rel);
+        if entry.is_dir {
+            zip.add_directory(format!("{name}/"), dir_options).map_err(|e| e.to_string())?;
+            continue;
         }
-        Ok(())
+        let mut file = fs::File::open(&full).map_err(|e| format!("{}: {e}", full.display()))?;
+        zip.start_file(name, dir_options.unix_permissions(0o644).large_file(entry.len >= u32::MAX as u64))
+            .map_err(|e| e.to_string())?;
+        let mut buffer = [0u8; 64 * 1024];
+        loop {
+            check_control(control)?;
+            let n = file.read(&mut buffer).map_err(|e| format!("{}: {e}", full.display()))?;
+            if n == 0 { break; }
+            zip.write_all(&buffer[..n]).map_err(|e| format!("写入压缩包失败: {e}"))?;
+        }
+        // 包名就是清单摘要，打包期间源文件变了就必须失败重来，不能传一个名实不符的包。
+        let after = file.metadata().map_err(|e| e.to_string())?;
+        if after.len() != entry.len || after.modified().map(mtime_ms).unwrap_or_default() != entry.mtime_ms {
+            return Err(format!("打包期间文件发生变化，请重试: {}", full.display()));
+        }
     }
-    append(&mut zip, &source, root_name, excludes, progress, control)?;
-    drop(zip.finish().map_err(|e| format!("完成压缩包失败: {e}"))?);
-    let mut file = fs::File::open(&path).map_err(|e| format!("读取压缩包失败: {e}"))?;
-    let (mut sha256, mut md5) = (Sha256::new(), Md5::new());
-    let mut buffer = [0u8; 64 * 1024];
-    loop {
-        check_control(control)?;
-        let n = file.read(&mut buffer).map_err(|e| e.to_string())?;
-        if n == 0 { break; }
-        sha256.update(&buffer[..n]);
-        md5.update(&buffer[..n]);
-    }
-    let size = file.metadata().map_err(|e| e.to_string())?.len();
-    drop(file);
-    let named = temp.path().join(format!("Backy-{:x}.zip", sha256.finalize()));
+    let written = zip.finish().map_err(|e| format!("完成压缩包失败: {e}"))?;
+    written.sync_all().map_err(|e| e.to_string())?;
+    let size = written.metadata().map_err(|e| e.to_string())?.len();
+    drop(written);
+    let named = temp.path().join(manifest.file_name());
     fs::rename(&path, &named).map_err(|e| format!("重命名压缩包失败: {e}"))?;
-    Ok(Archive { _temp: temp, path: named, size, md5: format!("{:x}", md5.finalize()) })
+    Ok(Archive { _temp: temp, path: named, size })
 }
 
 fn retry_delay(stage: &str, attempt: usize, error: &str, report: &mut dyn FnMut(String)) {
@@ -563,7 +636,7 @@ pub fn sync_dir(
     root: &str,
     excludes: &crate::backup::ExcludeRules,
     report: &mut dyn FnMut(String),
-    progress: &mut dyn FnMut(&Path, &'static str, bool),
+    progress: &mut dyn FnMut(&Path, &'static str, u64, u64),
     control: &mut dyn FnMut() -> bool,
 ) -> Result<(), String> {
     let drive = Drive::new(cookie.into())?;
@@ -576,26 +649,34 @@ fn sync_archive(
     root: &str,
     excludes: &crate::backup::ExcludeRules,
     report: &mut dyn FnMut(String),
-    progress: &mut dyn FnMut(&Path, &'static str, bool),
+    progress: &mut dyn FnMut(&Path, &'static str, u64, u64),
     control: &mut dyn FnMut() -> bool,
 ) -> Result<(), String> {
-    report(format!("正在打包夸克上传文件: {}", source.display()));
-    let archive = create_archive(source, excludes, progress, control)?;
+    report(format!("正在扫描夸克上传清单: {}", source.display()));
+    let manifest = build_manifest(source, excludes, progress, control)?;
     check_control(control)?;
-    let name = source.file_name().and_then(|s| s.to_str()).unwrap_or("Backy");
-    report(format!("压缩包已生成: {}（{} 字节）", archive.path.file_name().unwrap().to_string_lossy(), archive.size));
-    progress(&archive.path, "uploading", false);
-    let target = drive.child(root, name)?;
+    let archive_name = manifest.file_name();
+    let total = manifest.entries.len() as u64;
+    report(format!("清单完成: {total} 个条目，标识 {archive_name}"));
+    let target = drive.child(root, &manifest.root)?;
     check_control(control)?;
+    // 先查云端列表。包名就是清单摘要，内容没变化时压缩这一步完全可以省掉 ——
+    // 旧实现必须先压完 12 GB 再拿内容摘要去查，查到了也只能把包丢掉。
     let entries = drive.children(&target)?;
-    if archive.exists_remotely(&entries) {
-        report(format!("夸克跳过（已有相同压缩包）: {}", source.display()));
-    } else {
-        check_control(control)?;
-        drive.upload(&archive.path, &target, report, control)?;
-        report(format!("夸克压缩包上传完成: {}", source.display()));
+    if uploaded_already(&entries, &archive_name) {
+        report(format!("夸克跳过（内容未变化，云端已有 {archive_name}）: {}", source.display()));
+        progress(&manifest.source, "uploading", total, total);
+        return Ok(());
     }
-    progress(&archive.path, "uploading", true);
+    check_control(control)?;
+    report(format!("云端没有这份内容，开始打包: {}", source.display()));
+    let archive = create_archive(&manifest, progress, control)?;
+    check_control(control)?;
+    report(format!("压缩包已生成: {}（{} 字节）", archive.path.file_name().unwrap().to_string_lossy(), archive.size));
+    progress(&archive.path, "uploading", total, total);
+    drive.upload(&archive.path, &target, report, control)?;
+    report(format!("夸克压缩包上传完成: {}", source.display()));
+    progress(&archive.path, "uploading", total, total);
     Ok(())
 }
 
@@ -1017,20 +1098,21 @@ mod tests {
         let mut logs = Vec::new();
         for _ in 0..2 {
             let mut temporary = PathBuf::new();
-            let mut completed = 0;
-            sync_archive(&drive, source.path(), "0", &rules(), &mut |text| logs.push(text), &mut |path, stage, done| {
-                if stage == "uploading" { temporary = path.to_owned(); }
-                if done { completed += 1; }
+            sync_archive(&drive, source.path(), "0", &rules(), &mut |text| logs.push(text), &mut |path, stage, _, _| {
+                if stage == "uploading" && path.extension().and_then(|e| e.to_str()) == Some("zip") {
+                    temporary = path.to_owned();
+                }
             }, &mut || true).unwrap();
-            assert_eq!(completed, 1);
+            // 第一次真正打包上传，第二次命中同名包直接跳过；两次都不能留下临时包。
             assert!(!temporary.exists());
         }
         assert_eq!(server.join().unwrap(), 1);
-        assert!(logs.iter().any(|text| text.contains("已有相同压缩包")));
+        assert!(logs.iter().any(|text| text.contains("夸克跳过")));
     }
 
     fn pack(source: &Path) -> Archive {
-        create_archive(source, &rules(), &mut |_, _, _| {}, &mut || true).unwrap()
+        let manifest = build_manifest(source, &rules(), &mut |_, _, _, _| {}, &mut || true).unwrap();
+        create_archive(&manifest, &mut |_, _, _, _| {}, &mut || true).unwrap()
     }
 
     #[test]
@@ -1055,37 +1137,38 @@ mod tests {
     }
 
     #[test]
-    fn unchanged_content_has_identical_archive_even_if_timestamps_change() {
+    fn archive_name_follows_the_manifest_while_bytes_follow_content() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("file.txt");
         fs::write(&file, "same").unwrap();
         let first = pack(dir.path());
+        // 只改修改时间：清单变了，包名就必须跟着变，否则这次改动会被漏传。
         fs::File::options().write(true).open(&file).unwrap()
             .set_modified(std::time::UNIX_EPOCH + Duration::from_secs(1_700_000_000)).unwrap();
         let second = pack(dir.path());
-        assert_eq!(first.path.file_name(), second.path.file_name());
+        assert_ne!(first.path.file_name(), second.path.file_name());
+        // 内容没变、ZIP 内的时间戳又是固定值，所以两个包的字节完全一致。
         assert_eq!(fs::read(&first.path).unwrap(), fs::read(&second.path).unwrap());
         fs::write(&file, "edit").unwrap();
-        assert_ne!(first.path.file_name(), pack(dir.path()).path.file_name());
+        assert_ne!(second.path.file_name(), pack(dir.path()).path.file_name());
         fs::rename(&file, dir.path().join("renamed.txt")).unwrap();
         assert_ne!(second.path.file_name(), pack(dir.path()).path.file_name());
     }
 
     #[test]
-    fn archive_skip_uses_content_name_and_size_with_optional_md5() {
+    fn skip_decision_relies_on_the_manifest_name_alone() {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("file.txt"), "abc").unwrap();
-        let archive = pack(dir.path());
-        let entry = json!({"file_name":archive.path.file_name().unwrap().to_str().unwrap(),"size":archive.size,"dir":false});
-        assert!(archive.exists_remotely(&[entry.clone()]));
-        for (key, value) in [("file_name", json!("other.zip")), ("size", json!(archive.size + 1)), ("dir", json!(true)), ("md5", json!("wrong"))] {
-            let mut different = entry.clone();
-            different[key] = value;
-            assert!(!archive.exists_remotely(&[different]));
-        }
-        let mut hashed = entry;
-        hashed["file_md5"] = json!(archive.md5.to_ascii_uppercase());
-        assert!(archive.exists_remotely(&[hashed]));
+        let manifest = build_manifest(dir.path(), &rules(), &mut |_, _, _, _| {}, &mut || true).unwrap();
+        let name = manifest.file_name();
+        assert!(name.starts_with("Backy-") && name.ends_with(".zip"));
+        // 云端的大小和 MD5 都不参与判断：包名已经是内容指纹。
+        let listed = json!({"file_name":name,"size":1,"dir":false,"md5":"whatever"});
+        assert!(uploaded_already(&[listed], &name));
+        assert!(!uploaded_already(&[json!({"file_name":name,"dir":true})], &name));
+        assert!(!uploaded_already(&[json!({"file_name":"Backy-26f5e06c353e42f0d3c1c0df9d2a19dc.zip","dir":false})], &name));
+        // 同名目录与文件混在一起时只认文件。
+        assert!(uploaded_already(&[json!({"file_name":name,"dir":true}), json!({"file_name":name,"dir":false})], &name));
     }
 
     #[test]
@@ -1095,7 +1178,8 @@ mod tests {
         fs::write(dir.path().join("node_modules/secret.txt"), "excluded").unwrap();
         fs::write(dir.path().join("debug.log"), "excluded").unwrap();
         let excludes = crate::backup::ExcludeRules::from_config(&json!(["node_modules", "*.log"])).unwrap();
-        let archive = create_archive(dir.path(), &excludes, &mut |_, _, _| {}, &mut || true).unwrap();
+        let manifest = build_manifest(dir.path(), &excludes, &mut |_, _, _, _| {}, &mut || true).unwrap();
+        let archive = create_archive(&manifest, &mut |_, _, _, _| {}, &mut || true).unwrap();
         let mut zip = zip::ZipArchive::new(fs::File::open(&archive.path).unwrap()).unwrap();
         assert_eq!(zip.len(), 1);
         assert!(zip.by_index(0).unwrap().is_dir());
@@ -1105,13 +1189,15 @@ mod tests {
     fn archive_stop_mid_file_never_returns_partial_package() {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("large.txt"), vec![b'a'; 256 * 1024]).unwrap();
+        let manifest = build_manifest(dir.path(), &rules(), &mut |_, _, _, _| {}, &mut || true).unwrap();
         let mut calls = 0;
-        let result = create_archive(dir.path(), &rules(), &mut |_, _, _| {}, &mut || {
+        let result = create_archive(&manifest, &mut |_, _, _, _| {}, &mut || {
             calls += 1;
             calls < 7
         });
         assert_eq!(result.err().as_deref(), Some(INTERRUPTED));
         assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
-        assert!(create_archive(&dir.path().join("missing"), &rules(), &mut |_, _, _| {}, &mut || true).is_err());
+        // 目录不存在时在扫描清单阶段就该失败，不会走到打包。
+        assert!(build_manifest(&dir.path().join("missing"), &rules(), &mut |_, _, _, _| {}, &mut || true).is_err());
     }
 }

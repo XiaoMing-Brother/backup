@@ -181,7 +181,12 @@ function renderBackupProgress() {
   if (total || resultFeedback === "success") meter.setAttribute("aria-valuenow", String(percent));
   else meter.removeAttribute("aria-valuenow");
   meter.setAttribute("aria-valuetext", resultFeedback ? $("#backup-stage").textContent : `${cloud ? "夸克同步" : "本地备份"}，已处理 ${done} / ${total} 个任务，${stage}`);
-  $("#backup-progress-caption").textContent = resultFeedback ? (resultFeedback === "success" ? "全部处理完成" : resultFeedback === "stopped" ? "已完成的操作已保留，可继续上次任务" : "已完成的操作已保留，可在日志中查看失败项目") : `已处理 ${p.filesProcessed || 0} ${cloud ? "个压缩包（含未变化压缩包）" : "个文件（含未变化文件）"} · 进度按任务数计算`;
+  // 夸克同步先扫清单再压缩，filesProcessed 是清单条目数，总数已知时一并显示。
+  const filesTotal = Math.max(0, p.filesTotal || 0);
+  const progressCaption = cloud
+    ? `已扫描 ${p.filesProcessed || 0}${filesTotal ? ` / ${filesTotal}` : ""} 个文件 · 进度按任务数计算`
+    : `已处理 ${p.filesProcessed || 0} 个文件（含未变化文件） · 进度按任务数计算`;
+  $("#backup-progress-caption").textContent = resultFeedback ? (resultFeedback === "success" ? "全部处理完成" : resultFeedback === "stopped" ? "已完成的操作已保留，可继续上次任务" : "已完成的操作已保留，可在日志中查看失败项目") : progressCaption;
 }
 
 function renderResult() {
@@ -957,11 +962,22 @@ function initBackgroundParticles() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
-  function getThemeColor() {
-    const computed = getComputedStyle(document.body);
-    const accent = computed.getPropertyValue("--accent").trim() || "#52645a";
-    return accent;
+  // 主题色只在切换时读一次。render() 每帧调 getComputedStyle 会强制一次样式重算，
+  // 60fps 下就是每秒 60 次 —— 对一个常驻托盘的界面属于持续的无谓 CPU 占用。
+  let accentColor = "";
+  function readAccentColor() {
+    const value = getComputedStyle(document.body).getPropertyValue("--accent").trim();
+    accentColor = value || "#52645a";
   }
+  function getThemeColor() {
+    if (!accentColor) readAccentColor();
+    return accentColor;
+  }
+  // 主题切换改的是 body 的 data-theme，用属性观察比在每个切换入口挂钩更不容易漏。
+  new MutationObserver(readAccentColor).observe(document.body, {
+    attributes: true,
+    attributeFilter: ["data-theme"],
+  });
 
   class Particle {
     constructor() {

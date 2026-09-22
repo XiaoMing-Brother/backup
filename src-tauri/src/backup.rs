@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use std::{
     collections::{HashMap, HashSet},
@@ -44,11 +44,17 @@ pub struct Progress {
     pub task_source: String,
     pub current_path: String,
     pub files_processed: u64,
+    /// 当前阶段的条目总数；夸克打包这类「先扫描后处理」的流程才会用到，
+    /// 未知时为 0。
+    pub files_total: u64,
 }
 
 pub struct RunOutcome {
     pub stats: Stats,
     pub interrupted: bool,
+    /// 生产路径只累加不消费（排查性能时配合 perf_* 基准测试使用），
+    /// 所以这里显式允许未被读取。
+    #[allow(dead_code)]
     pub profile: StageProfile,
 }
 
@@ -71,7 +77,9 @@ pub struct StageProfile {
     pub dir_stat_ns: u64,
     /// 目标目录自身的 symlink_metadata（仅顶层任务需要）
     pub target_stat_ns: u64,
-    /// 每个源文件的 fs::metadata
+    /// 每个源文件的 fs::metadata。现在直接复用目录枚举结果，这一项恒为 0，
+    /// 保留它是为了让 perf_scan_of_real_tasks 的输出格式保持稳定。
+    #[allow(dead_code)]
     pub source_meta_ns: u64,
     /// state.json 读取
     pub state_read_ns: u64,
@@ -90,13 +98,26 @@ pub fn read_json(path: &Path, default: Value) -> Result<Value, String> {
 }
 
 pub fn write_json(path: &Path, value: &Value) -> Result<(), String> {
+    write_json_inner(path, value, true)
+}
+
+/// 紧凑输出。状态文件条目多、又只有程序自己读，pretty 的两空格缩进实测多占约 10% 体积。
+pub fn write_json_compact(path: &Path, value: &Value) -> Result<(), String> {
+    write_json_inner(path, value, false)
+}
+
+fn write_json_inner(path: &Path, value: &Value, pretty: bool) -> Result<(), String> {
     (|| -> Result<(), Box<dyn std::error::Error>> {
         let parent = path.parent().ok_or("数据路径缺少父目录")?;
         fs::create_dir_all(parent)?;
         let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
         {
             let mut writer = io::BufWriter::with_capacity(65536, &mut tmp);
-            serde_json::to_writer_pretty(&mut writer, value)?;
+            if pretty {
+                serde_json::to_writer_pretty(&mut writer, value)?;
+            } else {
+                serde_json::to_writer(&mut writer, value)?;
+            }
             writer.write_all(b"\n")?;
             writer.flush()?;
         }
@@ -250,7 +271,7 @@ impl ExcludeRules {
     }
 }
 
-fn is_link(meta: &fs::Metadata) -> bool {
+pub(crate) fn is_link(meta: &fs::Metadata) -> bool {
     #[cfg(windows)]
     {
         use std::os::windows::fs::MetadataExt;
@@ -319,8 +340,10 @@ fn hash(path: &Path) -> io::Result<String> {
 pub struct Engine<'a> {
     pub stats: Stats,
     pub profile: StageProfile,
+    /// 上一轮落盘的状态，只用来判断本轮重建出来的快照是否需要写盘。
     state: Value,
-    state_changed: bool,
+    /// 本轮实际遍历到的源文件快照。每轮重建、不做增量累积，见 run_controlled 的说明。
+    rebuilt: Map<String, Value>,
     dry: bool,
     use_hash: bool,
     excludes: &'a ExcludeRules,
@@ -435,10 +458,16 @@ impl Engine<'_> {
         let entries = fs::read_dir(source).and_then(|it| it.collect::<Result<Vec<_>, _>>());
         self.profile.source_read_dir_ns += t.elapsed().as_nanos() as u64;
         let t = Instant::now();
-        let targets = match fs::read_dir(target) {
-            Ok(v) => v.collect::<Result<Vec<_>, _>>(),
-            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(vec![]),
-            Err(e) => Err(e),
+        // create_target 说明目标目录刚被判定为不存在，而 create_dir_all 在下面才执行，
+        // 这次枚举必然 NotFound —— 直接跳过，首次全量备份时每目录省一次失败调用。
+        let targets = if create_target {
+            Ok(vec![])
+        } else {
+            match fs::read_dir(target) {
+                Ok(v) => v.collect::<Result<Vec<_>, _>>(),
+                Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(vec![]),
+                Err(e) => Err(e),
+            }
         };
         self.profile.target_read_dir_ns += t.elapsed().as_nanos() as u64;
         // 完整读取源目录后才允许创建目标目录，读取失败不能被当成空目录。
@@ -542,11 +571,13 @@ impl Engine<'_> {
                 if excludes.matches(&entry.file_name().to_string_lossy()) {
                     return Ok(false);
                 }
-                let meta = fs::symlink_metadata(entry.path())?;
-                if is_link(&meta) {
+                // entry_info 复用目录枚举结果（Windows 上不产生额外系统调用）；
+                // 原来的 symlink_metadata 是逐条真 syscall，而清理只发生在整棵过期目录上。
+                let info = entry_info(&entry)?;
+                if info.is_link {
                     return Err(io::Error::other("待清理目录包含链接"));
                 }
-                if meta.is_dir() && !check(&entry.path(), excludes)? {
+                if info.is_dir && !check(&entry.path(), excludes)? {
                     return Ok(false);
                 }
             }
@@ -607,11 +638,6 @@ impl Engine<'_> {
                     .set_times(fs::FileTimes::new().set_modified(src_modified))?;
                 tmp.as_file().sync_all()?;
                 tmp.persist(target).map_err(|e| e.error)?;
-                self.state[source.to_string_lossy().as_ref()] = json!({
-                    "size": src_len, "mtimeMs": src_modified.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs_f64() * 1000.0,
-                    "hash": source_hash,
-                });
-                self.state_changed = true;
             }
             self.stats.files_copied += 1;
             self.stats.total_bytes += src_len;
@@ -628,8 +654,40 @@ impl Engine<'_> {
             self.stats.files_skipped += 1;
             self.stats.saved_bytes += src_len;
         }
+        // 无论复制还是跳过都记进本轮快照：state 的价值在于「当前源目录长什么样」，
+        // 只记复制过的文件会让快照随时间失真。dry 模式不落盘，也就不必构造。
+        if !self.dry {
+            self.record(source, src_len, src_modified, source_hash);
+        }
         self.mark_processed();
         Ok(())
+    }
+
+    /// 记录本轮遍历到的一个源文件。
+    ///
+    /// state 目前不参与增量判断（比较完全走目标目录枚举），所以这里只维护「本轮快照」，
+    /// 不再像以前那样只增不减地累积 —— 旧写法会让已删除的任务、被排除规则命中的旧记录
+    /// 永远留在文件里（2026-09-22 实测 33 508 条中有 32 233 条已永不会再被扫描到）。
+    fn record(&mut self, source: &Path, len: u64, modified: SystemTime, hash: Option<String>) {
+        let key = source.to_string_lossy().into_owned();
+        // 跳过复制的文件这一轮没有重算哈希，沿用上一轮的记录（仅大小一致才沿用）。
+        // 否则同一份内容会每轮在 hash「有值 / null」之间摆动，快照永远不等于上一轮，
+        // state 就会被反复重写。
+        let hash = hash.or_else(|| {
+            let previous = self.state.get(key.as_str())?;
+            if previous["size"].as_u64() != Some(len) {
+                return None;
+            }
+            previous["hash"].as_str().map(str::to_owned)
+        });
+        self.rebuilt.insert(
+            key,
+            json!({
+                "size": len,
+                "mtimeMs": modified.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs_f64() * 1000.0,
+                "hash": hash,
+            }),
+        );
     }
 }
 
@@ -662,7 +720,7 @@ pub fn run_controlled(
         },
         profile: StageProfile::default(),
         state: json!({}),
-        state_changed: false,
+        rebuilt: Map::new(),
         dry,
         use_hash,
         excludes,
@@ -704,10 +762,15 @@ pub fn run_controlled(
             engine.stats.progress.tasks_done = index + 1;
             engine.progress("task-finished", source);
         }
-        if !dry && (state_missing || engine.state_changed) {
+        // 状态重建：直接用本轮遍历结果覆盖，而不是往旧状态里增量追加。
+        // 中断时同样落盘，保住中断点之前已经完成的遍历（与旧行为一致）。
+        // 空快照只在文件本来就不存在时才写，免得把一份已有记录清成空文件。
+        let rebuilt = Value::Object(std::mem::take(&mut engine.rebuilt));
+        let empty = rebuilt.as_object().is_some_and(|entries| entries.is_empty());
+        if !dry && (state_missing || (!empty && rebuilt != engine.state)) {
             engine.progress("saving", state_file);
             let t = Instant::now();
-            write_json(state_file, &engine.state)?;
+            write_json_compact(state_file, &rebuilt)?;
             engine.profile.state_write_ns = t.elapsed().as_nanos() as u64;
         }
         Ok(())
@@ -840,10 +903,11 @@ mod tests {
         );
         let second = run(&tasks, &state, false, true, &mut |_, _, _| {});
         assert_eq!((second.files_skipped, second.saved_bytes), (1, 5));
-        assert!(read_json(&state, json!({}))
-            .unwrap()
-            .get("old-path")
-            .is_some());
+        // 状态每轮重建而不是累积：遗留的无效条目（任务已删除、规则已变更）会被清掉，
+        // 只留下本轮真正遍历到的源文件。
+        let entries = read_json(&state, json!({})).unwrap();
+        assert!(entries.get("old-path").is_none());
+        assert!(entries.get(src.join("a.txt").to_string_lossy().as_ref()).is_some());
         fs::remove_file(src.join("a.txt")).unwrap();
         let third = run(&tasks, &state, false, true, &mut |_, _, _| {});
         assert_eq!(third.items_deleted, 1);
