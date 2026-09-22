@@ -276,10 +276,11 @@ input.mini { width: 110px; }
 .inline-notice { font-size: 14px; color: #6a5a33; background: #faf5e8; border: 1px solid #e9dfc6; border-radius: 8px; padding: 12px 14px; line-height: 1.8; margin-top: 14px; }
 #init-notice { max-width: 1120px; margin: 0 auto 16px; }
 .field-error { color: var(--red); font-size: 14px; line-height: 1.7; margin-top: 12px; }
-.stats-trend { display: flex; overflow-x: auto; align-items: flex-end; gap: 9px; height: 240px; padding: 16px 4px 48px; margin-top: 18px; background: repeating-linear-gradient(to top, transparent 0, transparent 48px, #e9efec 49px, transparent 50px); }
+.stats-trend { position: relative; display: flex; overflow-x: auto; align-items: flex-end; gap: 9px; height: 240px; padding: 16px 4px 48px; margin-top: 18px; background: repeating-linear-gradient(to top, transparent 0, transparent 48px, #e9efec 49px, transparent 50px); }
 .trend-col { flex: 1; min-width: 76px; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; }
 .trend-bar { flex-shrink: 1; width: 100%; max-width: 30px; min-height: 3px; background: color-mix(in srgb, var(--accent) 75%, var(--card)); border-radius: 4px 4px 0 0; }
 .trend-col.fail .trend-bar { background: #cb6770; }
+.trend-line-svg { position: absolute; top: 0; left: 0; pointer-events: none; z-index: 1; }
 .trend-val, .trend-x { font-size: 14px; color: var(--muted); max-width: 100%; white-space: nowrap; margin-top: 6px; }
 .trend-val { overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; }
 .trend-x { margin-top: 14px; font-size: 14px; }

@@ -1,6 +1,6 @@
 {
   "name": "backy",
-  "version": "1.1.41",
+  "version": "1.1.42",
   "description": "基于 Tauri 的增量备份桌面工具，支持定时/即时/任务调度。",
   "author": "local",
   "type": "module",

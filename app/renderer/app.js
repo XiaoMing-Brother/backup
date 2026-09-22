@@ -356,6 +356,136 @@ function renderTrend() {
       <div class="trend-x">${shortTime(r.finishedAt)}</div>`;
     box.appendChild(col);
   });
+  scheduleDrawTrendLine(box, recent);
+}
+
+/* 折线依赖柱子的真实布局尺寸，而视图切换动画（view-enter 的 translateY）
+   会让 clientHeight 在动画期间抖动 —— 这里用小间隔轮询等布局稳定，
+   并保证只有最后一次请求生效，避免快速重渲染时多个 rAF 互相覆盖。 */
+let trendLineTimer = 0;
+let trendLineToken = 0;
+
+function scheduleDrawTrendLine(box, recent) {
+  clearTimeout(trendLineTimer);
+  trendLineTimer = setTimeout(() => {
+    const token = ++trendLineToken;
+    let tries = 0;
+    let lastW = -1;
+    let lastH = -1;
+    const tick = () => {
+      if (token !== trendLineToken) return;
+      const w = box.scrollWidth;
+      const h = box.clientHeight;
+      const stable = w === lastW && h === lastH;
+      lastW = w;
+      lastH = h;
+      if ((stable && w > 0 && h > 0) || ++tries > 12) {
+        drawTrendLine(box, recent);
+        return;
+      }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }, 320);
+}
+
+function drawTrendLine(container, recent) {
+  const cols = container.querySelectorAll(".trend-col");
+  if (cols.length < 2) return;
+  let svg = container.querySelector(".trend-line-svg");
+  if (!svg) {
+    svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.classList.add("trend-line-svg");
+    container.appendChild(svg);
+  }
+  // 先清掉上一轮的固定尺寸，否则改窗口大小后内联样式会盖住新测量值，
+  // 重绘等于没发生（宽度、viewBox 全部锁死在旧值上）。
+  svg.removeAttribute("viewBox");
+  svg.removeAttribute("width");
+  svg.removeAttribute("height");
+  svg.style.cssText = "position:absolute;top:0;left:0;pointer-events:none;z-index:1;";
+  const cs = getComputedStyle(container);
+  const padTop = parseFloat(cs.paddingTop) || 16;
+  const totalH = container.clientHeight;
+  const totalW = container.scrollWidth;
+  const chartBottom = totalH - 48;
+  const lineColor = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#2e8b57";
+
+  const points = [];
+  cols.forEach((col, i) => {
+    const bar = col.querySelector(".trend-bar");
+    if (!bar) return;
+    const barH = bar.offsetHeight;
+    const x = col.offsetLeft + col.offsetWidth / 2;
+    const y = chartBottom - padTop - barH;
+    const val = (recent[i] && recent[i].totalBytes) || 0;
+    if (val > 0) points.push({ x, y, val, success: recent[i].success !== false, index: i });
+  });
+  if (points.length < 2) return;
+
+  const smoothPath = smoothLine(points);
+  const areaPath = smoothPath + ` L${points[points.length - 1].x},${chartBottom} L${points[0].x},${chartBottom} Z`;
+  // 圆点要给填充色留出可见面积：白描边必须比半径细得多，
+  // 否则 3px 圆 + 1.5px 描边只剩一圈白环，看不出成功/失败配色。
+  const dotRadius = 3.6;
+
+  svg.setAttribute("viewBox", `0 0 ${totalW} ${totalH}`);
+  svg.setAttribute("width", totalW);
+  svg.setAttribute("height", totalH);
+  svg.setAttribute("preserveAspectRatio", "none");
+  svg.style.cssText = `position:absolute;top:0;left:0;pointer-events:none;z-index:1;width:${totalW}px;min-width:${totalW}px;height:${totalH}px;`;
+
+  let dots = "";
+  points.forEach((p) => {
+    const color = p.success ? lineColor : "#cb6770";
+    const title = recent[p.index] ? `${fmtTime(recent[p.index].finishedAt)} · ${fmtBytes(recent[p.index].totalBytes)}` : "";
+    dots += `<circle cx="${p.x}" cy="${p.y}" r="${dotRadius}" fill="${color}"><title>${title}</title></circle>`;
+  });
+
+  svg.innerHTML = `
+    <defs>
+      <linearGradient id="trend-fill" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="${lineColor}" stop-opacity="0.18"/>
+        <stop offset="100%" stop-color="${lineColor}" stop-opacity="0.02"/>
+      </linearGradient>
+      <filter id="trend-shadow" x="-20%" y="-20%" width="140%" height="140%">
+        <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="${lineColor}" flood-opacity="0.25"/>
+      </filter>
+    </defs>
+    <path d="${areaPath}" fill="url(#trend-fill)"/>
+    <path d="${smoothPath}" fill="none" stroke="${lineColor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" filter="url(#trend-shadow)"/>
+    ${dots}
+  `;
+
+  // 尺寸是写死的内联值，窗口变化必须重算；只绑一次，避免 renderTrend 反复叠加监听。
+  if (!container.dataset.trendResizeBound) {
+    container.dataset.trendResizeBound = "1";
+    let resizeTimer = 0;
+    window.addEventListener("resize", () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        const h = S.history || [];
+        if (h.length) drawTrendLine(container, h.slice(-20));
+      }, 150);
+    });
+  }
+}
+
+function smoothLine(points) {
+  if (points.length < 2) return "";
+  const xs = points.map((p) => p.x);
+  const ys = points.map((p) => p.y);
+  const n = points.length;
+  let d = `M${xs[0]},${ys[0]}`;
+  for (let i = 0; i < n - 1; i++) {
+    const x0 = xs[i], y0 = ys[i];
+    const x1 = xs[i + 1], y1 = ys[i + 1];
+    const dx = x1 - x0;
+    const cp1x = x0 + dx * 0.4;
+    const cp2x = x1 - dx * 0.4;
+    d += ` C${cp1x},${y0} ${cp2x},${y1} ${x1},${y1}`;
+  }
+  return d;
 }
 
 function renderHistoryTable() {
