@@ -31,6 +31,7 @@ if (window.__TAURI__) {
     pickFolder: (title) => invoke("pick_folder", { title: title || "选择文件夹" }),
     openPath: (path) => invoke("open_path", { path }),
     openUrl: (url) => invoke("open_url", { url }),
+    showWindow: () => action("show"),
     hideWindow: () => action("hide"),
     minimizeWindow: () => action("minimize"),
     toggleMaximize: () => action("toggleMaximize"),

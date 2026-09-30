@@ -52,6 +52,10 @@ node tools/tauri-smoke.cjs src-tauri/target/release/Backy.exe
 - `release/`：保留的可运行程序和安装包，不进入版本管理。
 - `CHANGELOG.md`：升级日志，与 `app/renderer/changelog.js` 内容保持一致。
 
+主窗口以 `visible: false` 隐藏启动（`src-tauri/tauri.conf.json`），界面首帧渲染完成后由
+`app/renderer/app.js` 调用 `window_action("show")` 显示，Rust 端另有 5 秒兜底：这样窗口出现在屏幕上时
+界面已经画好，不会先露出 WebView2 提交首帧前的白色空窗。改动这里请保留这条链路。
+
 依赖、构建产物（`node_modules/`、`src-tauri/target/`、`release/`）、界面截图产物
 （`artifacts/`）、本地兼容库（`tools/msvc-libs/`）和开发期运行数据都已在 `.gitignore` 中排除。
 

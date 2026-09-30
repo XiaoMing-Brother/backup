@@ -178,6 +178,13 @@ fn publish_logs(app: &AppHandle, entries: Vec<Value>) {
     }
     push(app, "logs", json!(entries));
 }
+/// 主窗口在 tauri.conf.json 里是隐藏启动的（`visible: false`），由渲染层渲染完首帧后
+/// 调 `window_action("show")` 显示。WebView2 提交第一帧之前，客户区是一块纯白空窗，
+/// 先隐藏就不会在白屏和界面之间空等；启动耗时也因此只体现在窗口出现的时刻上。
+static UI_SHOWN: AtomicBool = AtomicBool::new(false);
+/// 前端异常（脚本报错、WebView2 起不来）时也要把窗口显示出来，否则应用会「启动了却看不见」。
+const UI_SHOW_FALLBACK: Duration = Duration::from_secs(5);
+
 fn show(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.unminimize();
@@ -915,6 +922,12 @@ fn open_url(url: String) -> Result<(), String> {
 fn perform_window_action(app: &AppHandle, action: &str) -> Result<bool, String> {
     let w = app.get_webview_window("main").ok_or("窗口不存在")?;
     let result = match action {
+        // 渲染层渲染完首帧后调用：这时显示窗口，不会先露出 WebView2 的白色空窗。
+        "show" => {
+            UI_SHOWN.store(true, Ordering::Release);
+            show(app);
+            Ok(())
+        }
         "hide" => w.hide(),
         "minimize" => w.minimize(),
         "close" => w.close(),
@@ -1237,6 +1250,15 @@ fn main() {
                     }
                 })
                 .build(app)?;
+            // 窗口是隐藏启动的，正常由渲染层首帧就绪后显示；前端要是没报到（脚本报错、
+            // WebView2 起不来），这里兜底显示，避免应用看起来「没打开」。
+            let fallback: AppHandle = app.handle().clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(UI_SHOW_FALLBACK);
+                if !UI_SHOWN.load(Ordering::Acquire) {
+                    show(&fallback);
+                }
+            });
             log(handle, "info", "应用已启动（Tauri）");
             let handle = handle.clone();
             std::thread::spawn(move || loop {

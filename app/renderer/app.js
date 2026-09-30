@@ -1343,4 +1343,7 @@ document.addEventListener("auxclick", handleExternalLink, true);
   refreshVisibleView();
   $("#init-notice")?.remove();
   document.body.dataset.ready = "1";
-})();
+})()
+  // 主窗口是隐藏启动的（tauri.conf.json 的 visible: false），渲染完再显示，
+  // 就不会先露出 WebView2 提交首帧前的白色空窗；出错也照常显示，Rust 端另有兜底。
+  .finally(() => window.backupAPI?.showWindow?.());
