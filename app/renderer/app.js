@@ -69,6 +69,8 @@ function switchView(name) {
   $$(".view").forEach((v) => v.classList.toggle("active", v.id === `view-${name}`));
   if (name === "logs") flushLogs(true);
   if (name === "dashboard") { renderResult(); renderBackupProgress(); }
+  if (name === "stats") renderTrend();
+  else $("#heatmap-tooltip")?.setAttribute("hidden", "");
   const meta = {
     dashboard: ["备份概览", "查看备份状态与最近的文件变化。"],
     tasks: ["备份任务", "管理本地备份目录，直接选择哪些任务上传到夸克。"],
@@ -308,13 +310,41 @@ function flushLogs(force = false) {
 }
 
 /* ---------- 统计 ---------- */
-function shortTime(ts) {
-  const d = new Date(ts);
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mi = String(d.getMinutes()).padStart(2, "0");
-  return `${mm}/${dd} ${hh}:${mi}`;
+function localDateKey(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function buildBackupHeatmap(history, today = new Date()) {
+  // 按本地日历递进，避免 UTC 日期或夏令时把记录分到相邻日期。
+  const end = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 12);
+  const start = new Date(end);
+  start.setDate(start.getDate() - 364);
+  const days = [];
+  const byDate = new Map();
+  for (const date = new Date(start); date <= end; date.setDate(date.getDate() + 1)) {
+    const day = { date: localDateKey(date), month: date.getMonth() + 1, monthStart: date.getDate() === 1, count: 0, failures: 0, totalBytes: 0, filesCopied: 0 };
+    days.push(day);
+    byDate.set(day.date, day);
+  }
+  for (const record of history) {
+    if (record.finishedAt == null) continue;
+    const date = new Date(record.finishedAt);
+    if (!Number.isFinite(date.getTime())) continue;
+    const day = byDate.get(localDateKey(date));
+    if (!day) continue;
+    day.count++;
+    if (!record.success) day.failures++;
+    day.totalBytes += record.totalBytes || 0;
+    day.filesCopied += record.filesCopied || 0;
+  }
+  const maxBytes = Math.max(0, ...days.map((day) => day.totalBytes));
+  const offset = (start.getDay() + 6) % 7;
+  days.forEach((day, index) => {
+    day.column = Math.floor((offset + index) / 7);
+    day.row = (offset + index) % 7;
+    day.level = day.totalBytes > 0 ? Math.min(4, Math.ceil(day.totalBytes / maxBytes * 4)) : 0;
+  });
+  return { days, weeks: Math.ceil((offset + days.length) / 7), maxBytes };
 }
 
 function renderStats() {
@@ -338,163 +368,90 @@ function renderStats() {
 
 function renderTrend() {
   const box = $("#stats-trend");
-  const h = S.history || [];
-  const recent = h.slice(-20);
-  if (!recent.length) {
-    box.innerHTML = '<div class="trend-empty">暂无备份记录，运行一次备份后这里会显示传输量趋势。</div>';
-    return;
-  }
-  const maxBytes = Math.max(1, ...recent.map((r) => r.totalBytes || 0));
-  box.innerHTML = "";
-  recent.forEach((r) => {
-    const col = document.createElement("div");
-    col.className = "trend-col" + (r.success ? "" : " fail");
-    const pct = Math.max(2, ((r.totalBytes || 0) / maxBytes) * 100);
-    col.innerHTML = `
-      <div class="trend-bar" style="height:${pct.toFixed(1)}%" title="${fmtTime(r.finishedAt)} · 传输 ${fmtBytes(r.totalBytes)}"></div>
-      <div class="trend-val">${fmtBytes(r.totalBytes)}</div>
-      <div class="trend-x">${shortTime(r.finishedAt)}</div>`;
-    box.appendChild(col);
+  const { days, weeks, maxBytes } = buildBackupHeatmap(S.history || []);
+  const count = days.reduce((sum, day) => sum + day.count, 0);
+  const bytes = days.reduce((sum, day) => sum + day.totalBytes, 0);
+  const copied = days.reduce((sum, day) => sum + day.filesCopied, 0);
+  box.innerHTML = `
+    <div class="heatmap-summary"><strong>${days[0].date} 至 ${days[days.length - 1].date}</strong><span>${count} 次备份 · ${copied} 个更新文件 · ${fmtBytes(bytes)}</span></div>
+    <div class="heatmap-scroll"><div class="heatmap-calendar" style="--weeks:${weeks}" role="group" aria-label="每日备份，按周一至周日排列"></div></div>
+    <div class="heatmap-legend"><span>传输量</span><span>少</span>${[0, 1, 2, 3, 4].map((level) => `<i class="heatmap-swatch" data-level="${level}" title="${level ? fmtBytes(maxBytes * (level - 1) / 4) + ' 至 ' + fmtBytes(maxBytes * level / 4) : '0 B'}"></i>`).join("")}<span>多</span><span class="heatmap-legend-status"><i class="heatmap-swatch zero"></i>零传输备份</span><span class="heatmap-legend-status"><i class="heatmap-swatch failure"></i>含失败记录</span></div>
+    ${count ? "" : '<div class="heatmap-empty">该时间段暂无备份记录</div>'}
+    <div id="heatmap-tooltip" class="heatmap-tooltip" role="tooltip" hidden></div>`;
+  const calendar = box.querySelector(".heatmap-calendar");
+  const fragment = document.createDocumentFragment();
+  const months = days.map((day, index) => ({ ...day, index })).filter((day) => day.index === 0 || day.monthStart);
+  months.forEach((month, index) => {
+    // 起始月份仅剩一两天时，为紧邻的完整月份让出标签空间。
+    if (index === 0 && months[1]?.column < 2) return;
+    const label = document.createElement("span");
+    label.className = "heatmap-month";
+    label.textContent = `${month.month}月`;
+    const column = Math.min(month.column, weeks - 3);
+    label.style.cssText = `grid-row:1;grid-column:${column + 2} / span 3;${column < month.column ? "text-align:right;" : ""}`;
+    fragment.appendChild(label);
   });
-  scheduleDrawTrendLine(box, recent);
-}
-
-/* 折线依赖柱子的真实布局尺寸，而视图切换动画（view-enter 的 translateY）
-   会让 clientHeight 在动画期间抖动 —— 这里用小间隔轮询等布局稳定，
-   并保证只有最后一次请求生效，避免快速重渲染时多个 rAF 互相覆盖。 */
-let trendLineTimer = 0;
-let trendLineToken = 0;
-
-function scheduleDrawTrendLine(box, recent) {
-  clearTimeout(trendLineTimer);
-  trendLineTimer = setTimeout(() => {
-    const token = ++trendLineToken;
-    let tries = 0;
-    let lastW = -1;
-    let lastH = -1;
-    const tick = () => {
-      if (token !== trendLineToken) return;
-      const w = box.scrollWidth;
-      const h = box.clientHeight;
-      const stable = w === lastW && h === lastH;
-      lastW = w;
-      lastH = h;
-      if ((stable && w > 0 && h > 0) || ++tries > 12) {
-        drawTrendLine(box, recent);
-        return;
-      }
-      requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
-  }, 320);
-}
-
-function drawTrendLine(container, recent) {
-  const cols = container.querySelectorAll(".trend-col");
-  if (cols.length < 2) return;
-  let svg = container.querySelector(".trend-line-svg");
-  if (!svg) {
-    svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svg.classList.add("trend-line-svg");
-    container.appendChild(svg);
-  }
-  // 先清掉上一轮的固定尺寸，否则改窗口大小后内联样式会盖住新测量值，
-  // 重绘等于没发生（宽度、viewBox 全部锁死在旧值上）。
-  svg.removeAttribute("viewBox");
-  svg.removeAttribute("width");
-  svg.removeAttribute("height");
-  svg.style.cssText = "position:absolute;top:0;left:0;pointer-events:none;z-index:1;";
-  const cs = getComputedStyle(container);
-  const padTop = parseFloat(cs.paddingTop) || 16;
-  const totalH = container.clientHeight;
-  const totalW = container.scrollWidth;
-  const chartBottom = totalH - 48;
-  // 零值柱只有 min-height(3px) 高，折线若严格贴柱顶会与那排小横线挤在一起，
-  // 分不清线和柱。这里整体上抬一段，让折线与柱子留出可辨的间隙。
-  const baselineLift = 14;
-  const lineColor = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#2e8b57";
-
-  const points = [];
-  cols.forEach((col, i) => {
-    const bar = col.querySelector(".trend-bar");
-    if (!bar || !recent[i]) return;
-    const barH = bar.offsetHeight;
-    const x = col.offsetLeft + col.offsetWidth / 2;
-    const y = chartBottom - padTop - barH - baselineLift;
-    // 传输量为 0 的轮次同样是有效记录（增量备份没变化时确实是 0），
-    // 必须参与连线，否则折线会断裂、甚至整条不画。
-    points.push({ x, y, val: recent[i].totalBytes || 0, success: recent[i].success !== false, index: i });
+  ["周一", "", "周三", "", "周五", "", "周日"].forEach((weekday, row) => {
+    const label = document.createElement("span");
+    label.className = "heatmap-weekday";
+    label.textContent = weekday;
+    label.style.cssText = `grid-column:1;grid-row:${row + 2}`;
+    fragment.appendChild(label);
   });
-  if (points.length < 2) return;
-
-  const smoothPath = smoothLine(points);
-  // 面积填充到折线的基线（零值点所在高度，已上抬）；
-  // 零值基准线另画在真正的柱底，与折线留出 baselineLift 的间隙，
-  // 否则两者重合会被折线完全盖住，看不出「0 在哪」。
-  const areaBaseY = chartBottom - baselineLift;
-  const areaPath = smoothPath + ` L${points[points.length - 1].x},${areaBaseY} L${points[0].x},${areaBaseY} Z`;
-  const zeroLineY = chartBottom;
-  const dotRadius = 3.6;
-
-  svg.setAttribute("viewBox", `0 0 ${totalW} ${totalH}`);
-  svg.setAttribute("width", totalW);
-  svg.setAttribute("height", totalH);
-  svg.setAttribute("preserveAspectRatio", "none");
-  svg.style.cssText = `position:absolute;top:0;left:0;pointer-events:none;z-index:1;width:${totalW}px;min-width:${totalW}px;height:${totalH}px;`;
-
-  let dots = "";
-  points.forEach((p) => {
-    const color = p.success ? lineColor : "#cb6770";
-    const title = recent[p.index] ? `${fmtTime(recent[p.index].finishedAt)} · ${fmtBytes(recent[p.index].totalBytes)}` : "";
-    dots += `<circle cx="${p.x}" cy="${p.y}" r="${dotRadius}" fill="${color}"><title>${title}</title></circle>`;
+  days.forEach((day, index) => {
+    const cell = document.createElement("button");
+    cell.type = "button";
+    cell.className = "heatmap-day" + (day.count ? " has-record" : "") + (day.failures ? " has-failure" : "");
+    cell.dataset.date = day.date;
+    cell.dataset.index = index;
+    cell.dataset.level = day.level;
+    cell.style.cssText = `grid-column:${day.column + 2};grid-row:${day.row + 2}`;
+    cell.tabIndex = index === days.length - 1 ? 0 : -1;
+    cell.setAttribute("aria-label", `${day.date}，${day.count ? `${day.count} 次备份，传输 ${fmtBytes(day.totalBytes)}，更新 ${day.filesCopied} 个文件，失败 ${day.failures} 次` : "无备份记录"}`);
+    fragment.appendChild(cell);
   });
-
-  svg.innerHTML = `
-    <defs>
-      <linearGradient id="trend-fill" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="${lineColor}" stop-opacity="0.18"/>
-        <stop offset="100%" stop-color="${lineColor}" stop-opacity="0.02"/>
-      </linearGradient>
-      <filter id="trend-shadow" x="-20%" y="-20%" width="140%" height="140%">
-        <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="${lineColor}" flood-opacity="0.25"/>
-      </filter>
-    </defs>
-    <!-- 零值基准线：画在真正的柱底，与上抬后的折线留出间隙，标明「这一条水平位置就是 0」 -->
-    <line x1="0" y1="${zeroLineY}" x2="${totalW}" y2="${zeroLineY}" stroke="${lineColor}" stroke-opacity="0.3" stroke-width="1" stroke-dasharray="4 4"/>
-    <path d="${areaPath}" fill="url(#trend-fill)"/>
-    <path d="${smoothPath}" fill="none" stroke="${lineColor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" filter="url(#trend-shadow)"/>
-    ${dots}
-  `;
-
-  // 尺寸是写死的内联值，窗口变化必须重算；只绑一次，避免 renderTrend 反复叠加监听。
-  if (!container.dataset.trendResizeBound) {
-    container.dataset.trendResizeBound = "1";
-    let resizeTimer = 0;
-    window.addEventListener("resize", () => {
-      clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(() => {
-        const h = S.history || [];
-        if (h.length) drawTrendLine(container, h.slice(-20));
-      }, 150);
-    });
-  }
-}
-
-function smoothLine(points) {
-  if (points.length < 2) return "";
-  const xs = points.map((p) => p.x);
-  const ys = points.map((p) => p.y);
-  const n = points.length;
-  let d = `M${xs[0]},${ys[0]}`;
-  for (let i = 0; i < n - 1; i++) {
-    const x0 = xs[i], y0 = ys[i];
-    const x1 = xs[i + 1], y1 = ys[i + 1];
-    const dx = x1 - x0;
-    const cp1x = x0 + dx * 0.4;
-    const cp2x = x1 - dx * 0.4;
-    d += ` C${cp1x},${y0} ${cp2x},${y1} ${x1},${y1}`;
-  }
-  return d;
+  calendar.appendChild(fragment);
+  const tooltip = box.querySelector(".heatmap-tooltip");
+  const hideTooltip = () => { tooltip.hidden = true; };
+  const showTooltip = (cell) => {
+    if (!cell?.matches(".heatmap-day")) return;
+    const day = days[Number(cell.dataset.index)];
+    tooltip.innerHTML = `<strong>${day.date}</strong>${day.count ? `<div>备份次数<b>${day.count} 次</b></div><div>传输量<b>${fmtBytes(day.totalBytes)}</b></div><div>更新文件<b>${day.filesCopied} 个</b></div><div>成功 / 失败<b class="${day.failures ? "heatmap-error" : ""}">${day.count - day.failures} / ${day.failures}</b></div>` : '<span class="muted">无备份记录</span>'}`;
+    tooltip.hidden = false;
+    const rect = cell.getBoundingClientRect();
+    const host = box.getBoundingClientRect();
+    const left = Math.max(0, Math.min(box.clientWidth - tooltip.offsetWidth, rect.left - host.left + rect.width / 2 - tooltip.offsetWidth / 2));
+    const top = rect.top - tooltip.offsetHeight - 8 > 0 ? rect.top - host.top - tooltip.offsetHeight - 8 : rect.bottom - host.top + 8;
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${top}px`;
+  };
+  calendar.addEventListener("pointerover", (event) => showTooltip(event.target));
+  calendar.addEventListener("pointerleave", hideTooltip);
+  calendar.addEventListener("focusin", (event) => {
+    if (!event.target.matches(".heatmap-day")) return;
+    calendar.querySelector('.heatmap-day[tabindex="0"]').tabIndex = -1;
+    event.target.tabIndex = 0;
+    showTooltip(event.target);
+  });
+  calendar.addEventListener("focusout", hideTooltip);
+  calendar.addEventListener("click", (event) => showTooltip(event.target));
+  calendar.addEventListener("keydown", (event) => {
+    if (!event.target.matches(".heatmap-day")) return;
+    if (event.key === "Escape") { hideTooltip(); return; }
+    const step = { ArrowUp: -1, ArrowDown: 1, ArrowLeft: -7, ArrowRight: 7 }[event.key];
+    if (step === undefined && event.key !== "Home" && event.key !== "End") return;
+    event.preventDefault();
+    const index = Number(event.target.dataset.index);
+    const next = event.key === "Home" ? 0 : event.key === "End" ? days.length - 1 : Math.max(0, Math.min(days.length - 1, index + step));
+    event.target.tabIndex = -1;
+    const cell = calendar.querySelector(`[data-index="${next}"]`);
+    cell.tabIndex = 0;
+    cell.focus();
+  });
+  const scroll = box.querySelector(".heatmap-scroll");
+  scroll.addEventListener("scroll", hideTooltip);
+  // 隐藏视图尚无尺寸，进入统计页时重新渲染后再定位到最近日期。
+  if (isViewVisible("stats")) scroll.scrollLeft = scroll.scrollWidth;
 }
 
 function renderHistoryTable() {
@@ -771,6 +728,9 @@ function bindButtons() {
   });
 
   // 统计
+  const hideHeatmapTooltip = () => $("#heatmap-tooltip")?.setAttribute("hidden", "");
+  $("#main").addEventListener("scroll", hideHeatmapTooltip);
+  window.addEventListener("resize", hideHeatmapTooltip);
   $("#btn-clear-history").addEventListener("click", async () => {
     if (!confirm("确定清空所有备份历史记录吗？\n\n（只清除统计记录，不会影响已备份的文件）")) return;
     await window.backupAPI.clearHistory();

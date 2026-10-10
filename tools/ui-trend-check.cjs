@@ -1,6 +1,4 @@
-// 专门验证「备份趋势」折线：多轮历史下的绘制、尺寸稳定性、resize 重绘。
-// ui-smoke.cjs 的 mock 只有 1 条 history，折线会走 points.length<2 提前返回，
-// 覆盖不到 drawTrendLine —— 所以单独需要一个多轮数据的用例。
+// 使用模拟历史验证日期热力图，不读写真实备份数据。
 const fs = require('node:fs');
 const path = require('node:path');
 const smokeTemp = require('./smoke-temp.cjs');
@@ -21,22 +19,21 @@ const server = http.createServer((req, res) => {
   res.end(fs.readFileSync(path.join(root, 'app', 'renderer', name)));
 });
 
-// 12 轮历史：大小起伏 + 含失败轮 + 含零传输轮（验证 val>0 的过滤）
 const fixture = (version) => {
   let listener;
   const now = Date.now();
   const history = [];
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 365; i++) {
+    const date = new Date();
+    date.setHours(12, 0, 0, 0);
+    date.setDate(date.getDate() - 364 + i);
+    if (date.getDay() === 0 || i % 9 === 0 || (i < 120 && i % 13 !== 0)) continue;
     history.push({
-      success: i !== 4 && i !== 9,
-      filesCopied: 5 + (i * 7) % 40,
-      filesSkipped: 300,
-      totalBytes: i === 7 ? 0 : (i % 3 === 0 ? 18 : 6 + i) * 1258291,
-      savedBytes: 1024,
-      errors: i === 4 ? 2 : 0,
-      itemsDeleted: 0,
-      finishedAt: now - (12 - i) * 3600000,
-      durationMs: 2300 + i * 130,
+      success: i % 47 !== 0,
+      filesCopied: (i * 7) % 40, filesSkipped: 300,
+      totalBytes: i % 11 === 0 ? 0 : ((i * 17) % 80 + 1) * 1048576,
+      savedBytes: 1024, errors: i % 47 === 0 ? 1 : 0, itemsDeleted: 0,
+      finishedAt: date.getTime(), durationMs: 2300 + i * 10,
     });
   }
   const config = { theme: 'graphite', tasks: [], intervalMinutes: 30, scheduleMode: 'interval', dailyTimes: ['09:00'], weeklyDays: [1], weeklyTime: '09:00', useHashComparison: true };
@@ -53,46 +50,6 @@ const fixture = (version) => {
     getAppInfo: async () => ({ version, identifier: 'com.local.backup-assistant', license: 'MIT', repository: 'https://github.com/XiaoMing-Brother/backup', dataDir: 'C:\\t', debug: false }),
     minimizeWindow: () => {}, toggleMaximize: () => {}, hideWindow: () => {}, closeWindow: () => {},
   };
-};
-
-// 真实使用场景：绝大多数增量备份传输量为 0，只有偶尔几次有数据。
-// 这是 1.1.42 用户实际反馈「看不到折线」的场景，必须单独覆盖 ——
-// 旧实现用 val>0 过滤，19 个零点被丢掉只剩 1 个点，折线整条不绘制。
-const sparseTrend = async (evaluate, assert, shot) => {
-  const now = Date.now();
-  const history = [];
-  for (let i = 0; i < 20; i++) {
-    history.push({
-      success: true, filesCopied: 0, filesSkipped: 320, totalBytes: 0,
-      savedBytes: 0, errors: 0, itemsDeleted: 0,
-      finishedAt: now - (20 - i) * 3600000, durationMs: 900,
-    });
-  }
-  // 只有最后一次有传输量（模拟用户真实历史：19 次空跑 + 1 次有数据）
-  history[19].totalBytes = 13221497;
-  history[19].filesCopied = 42;
-
-  await evaluate(`(()=>{switchView('stats');S.history=${JSON.stringify(history)};renderStats();})()`);
-  await pause(1500);
-  const r = await evaluate(`(()=>{const box=document.querySelector('#stats-trend');const s=box.querySelector('.trend-line-svg');return {
-    exists:!!s,
-    cols:box.querySelectorAll('.trend-col').length,
-    dots:s?s.querySelectorAll('circle').length:0,
-    paths:s?s.querySelectorAll('path').length:0,
-    lines:s?s.querySelectorAll('line').length:0,
-    hasPathD:s?(s.querySelector('path[fill="none"]')||{}).getAttribute?s.querySelector('path[fill="none"]').getAttribute('d').length:0:0,
-    scrollW:box.scrollWidth, clientH:box.clientHeight,
-    svgW:s?parseFloat(s.style.width):0, svgH:s?parseFloat(s.style.height):0};})()`);
-  assert.ok(r.exists, '【稀疏数据】折线 SVG 必须存在 —— 19 个零点 + 1 个有值的真实场景');
-  assert.equal(r.cols, 20, '【稀疏数据】应有 20 根柱子');
-  assert.equal(r.dots, 20, `【稀疏数据】零点也必须有点，应为 20，实际 ${r.dots}`);
-  assert.equal(r.paths, 2, '【稀疏数据】面积 + 折线两条 path');
-  assert.equal(r.lines, 1, '【稀疏数据】应有一条零值基准线');
-  assert.ok(r.hasPathD > 40, '【稀疏数据】折线 path 必须有实际线段长度');
-  assert.equal(r.svgW, r.scrollW, '【稀疏数据】宽度应与容器一致');
-  assert.equal(r.svgH, r.clientH, '【稀疏数据】高度应与容器一致');
-  console.log('  ✓ 稀疏数据（19 零点 + 1 有值）折线正常绘制:', JSON.stringify(r));
-  await shot('trend-sparse');
 };
 
 (async () => {
@@ -124,90 +81,85 @@ const sparseTrend = async (evaluate, assert, shot) => {
     for (let i = 0; i < 80; i++) { if (await evaluate('document.body?.dataset.ready === "1"')) break; await pause(100); }
     assert.equal(await evaluate('document.body.dataset.ready'), '1', 'app booted');
 
-    // 1) 切到统计视图，等调度器完成（320ms 间隔 + 稳定性轮询）
     await evaluate("switchView('stats')");
-    await pause(1400);
-    const svg = await evaluate(`(()=>{const s=document.querySelector('#stats-trend .trend-line-svg');if(!s)return null;return {
-      circles:s.querySelectorAll('circle').length,
-      paths:s.querySelectorAll('path').length,
-      viewBox:s.getAttribute('viewBox'),
-      w:parseFloat(s.style.width),
-      minW:parseFloat(s.style.minWidth),
-      h:parseFloat(s.style.height),
-      scrollW:document.querySelector('#stats-trend').scrollWidth,
-      clientH:document.querySelector('#stats-trend').clientHeight,
-      cols:document.querySelectorAll('#stats-trend .trend-col').length,
-      failDots:[...s.querySelectorAll('circle')].filter(c=>c.getAttribute('fill')==='#cb6770').length};
-    })()`);
-    assert.ok(svg, 'trend-line-svg 必须存在');
-    assert.equal(svg.cols, 12, '12 根柱子');
-    // 12 轮里 1 轮 totalBytes=0，修掉 val>0 过滤后零点同样参与连线
-    assert.equal(svg.circles, 12, `每根柱子都应有点，实际 ${svg.circles}`);
-    assert.equal(svg.paths, 2, '面积 + 折线两条 path');
-    assert.equal(svg.failDots, 2, '两轮失败应有两个红色圆点');
-    console.log('  ✓ 折线已绘制:', JSON.stringify(svg));
-
-    // 2) 尺寸必须与容器一致（动画期读脏尺寸会写歪）
-    assert.equal(svg.w, svg.scrollW, `SVG 宽度 ${svg.w} 应等于容器 scrollWidth ${svg.scrollW}`);
-    assert.equal(svg.h, svg.clientH, `SVG 高度 ${svg.h} 应等于容器 clientHeight ${svg.clientH}`);
-    assert.equal(svg.minW, svg.scrollW, 'min-width 不应锁在旧值');
-    assert.equal(svg.viewBox, `0 0 ${svg.scrollW} ${svg.clientH}`, 'viewBox 应与容器一致');
-    console.log('  ✓ 尺寸与容器一致，viewBox =', svg.viewBox);
-    await shot('trend-line-1120');
-
-    // 3) 每个点必须落在柱子中心 / 柱顶之上 baselineLift（含零点柱，零点柱有 min-height:3px）
-    const align = await evaluate(`(()=>{const box=document.querySelector('#stats-trend');const s=box.querySelector('.trend-line-svg');const cs=getComputedStyle(box);const padTop=parseFloat(cs.paddingTop)||16;const chartBottom=box.clientHeight-48;const LIFT=14;
-      const dots=[...s.querySelectorAll('circle')].map(c=>({x:parseFloat(c.getAttribute('cx')),y:parseFloat(c.getAttribute('cy'))}));
-      const cols=[...box.querySelectorAll('.trend-col')];let maxDx=0,maxDy=0,matched=0,unmatched=0;
-      cols.forEach((col)=>{const bar=col.querySelector('.trend-bar');if(!bar||!bar.offsetHeight)return;
-        const ex=col.offsetLeft+col.offsetWidth/2, ey=chartBottom-padTop-bar.offsetHeight-LIFT;
-        const d=dots.find(p=>Math.abs(p.x-ex)<0.6);
-        if(!d){unmatched++;return;}
-        matched++;maxDx=Math.max(maxDx,Math.abs(d.x-ex));maxDy=Math.max(maxDy,Math.abs(d.y-ey));});
-      const base=box.clientHeight-48;
-      const baseLine=s.querySelector('line');
-      return {maxDx,maxDy,dots:dots.length,cols:cols.length,matched,unmatched,
-        hasBaseline:!!baseLine,
-        baselineY:baseLine?parseFloat(baseLine.getAttribute('y1')):null,expectBaselineY:base};})()`);
-    assert.equal(align.unmatched, 0, `每根柱子都应有对应圆点，未匹配 ${align.unmatched} 个`);
-    assert.equal(align.matched, align.cols, '圆点数应等于柱子数');
-    assert.ok(align.maxDx < 0.6, `圆点横向应与柱心对齐，实测最大偏差 ${align.maxDx}`);
-    assert.ok(align.maxDy < 0.6, `圆点纵向应贴合柱顶上方 baselineLift，实测最大偏差 ${align.maxDy}`);
-    assert.ok(align.hasBaseline, '应绘制零值基准线');
-    assert.ok(Math.abs(align.baselineY - align.expectBaselineY) < 0.6, `基准线应画在柱底 y=${align.expectBaselineY}，实际 ${align.baselineY}`);
-    console.log('  ✓ 圆点对位正确（' + align.matched + '/' + align.cols + '），最大偏差 dx=' + align.maxDx.toFixed(2) + ' dy=' + align.maxDy.toFixed(2) + '；基准线 y=' + align.baselineY);
-
-    // 4) 真正会读到脏尺寸的场景：视图切换动画进行中就收到 history。
-    //    view-enter 动画带 translateY(5px)，动画期 clientHeight 与最终值不同；
-    //    旧实现（一次性 rAF）会立刻取尺寸，落到动画中间态。
-    //    先把容器清空并重置 SVG，再在动画开始的瞬间灌入 history。
-    await evaluate(`(()=>{const box=document.querySelector('#stats-trend');box.innerHTML='';switchView('dashboard');})()`);
     await pause(400);
-    await evaluate(`(()=>{switchView('stats');const h=[];for(let i=0;i<12;i++){h.push({success:i!==3,filesCopied:9,filesSkipped:300,totalBytes:(5+i*4)*1258291,savedBytes:1024,errors:0,itemsDeleted:0,finishedAt:Date.now()-(12-i)*3600000,durationMs:2000+i*90});}
-      S.history=h;renderStats();})()`);
-    await pause(1400);
-    const mid = await evaluate(`(()=>{const box=document.querySelector('#stats-trend');const s=box.querySelector('.trend-line-svg');return {w:parseFloat(s.style.width),scrollW:box.scrollWidth,h:parseFloat(s.style.height),clientH:box.clientHeight,vb:s.getAttribute('viewBox'),dots:s.querySelectorAll('circle').length};})()`);
-    assert.equal(mid.w, mid.scrollW, `动画期渲染后 SVG 宽度必须等于容器宽度：${mid.w} vs ${mid.scrollW}`);
-    assert.equal(mid.h, mid.clientH, `动画期渲染后 SVG 高度必须等于容器高度：${mid.h} vs ${mid.clientH}`);
-    assert.equal(mid.vb, `0 0 ${mid.scrollW} ${mid.clientH}`, 'viewBox 必须与容器一致');
-    assert.equal(mid.dots, 12, `正数 totalBytes 的轮次都应有点，实际 ${mid.dots}`);
-    console.log('  ✓ 动画期渲染尺寸稳定: ' + mid.w + ' x ' + mid.h + '，viewBox=' + mid.vb);
-    await shot('trend-line-920');
+    assert.equal(await evaluate("document.querySelectorAll('.heatmap-day').length"), 365);
+    assert.ok(await evaluate("document.querySelectorAll('.heatmap-day.has-record').length > 100"));
+    assert.equal(await evaluate("document.querySelectorAll('.trend-line-svg, .trend-bar').length"), 0);
+    await shot('heatmap-1120');
 
-    // 5) 切走再切回，不应报错、不应叠加 SVG
-    await evaluate("switchView('dashboard')"); await pause(500);
-    await evaluate("switchView('stats')"); await pause(1400);
-    const after2 = await evaluate("document.querySelectorAll('#stats-trend .trend-line-svg').length");
-    assert.equal(after2, 1, `反复切换后 SVG 只应有一个，实际 ${after2}`);
-    console.log('  ✓ 反复切换视图未叠加 SVG');
+    // 实际鼠标悬浮，并检查提示框没有越出可用宽度。
+    const target = await evaluate(`(()=>{const cell=document.querySelector('.heatmap-day.has-record');const r=cell.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2,date:cell.dataset.date};})()`);
+    await send('Input.dispatchMouseEvent', {type:'mouseMoved', x:target.x, y:target.y});
+    await pause(150);
+    assert.equal(await evaluate("document.querySelector('#heatmap-tooltip').hidden"), false);
+    assert.match(await evaluate("document.querySelector('#heatmap-tooltip').textContent"), new RegExp(target.date));
+    assert.ok(await evaluate("(()=>{const t=document.querySelector('#heatmap-tooltip').getBoundingClientRect();const b=document.querySelector('#stats-trend').getBoundingClientRect();return t.left>=b.left-1 && t.right<=b.right+1;})()"));
+    await shot('heatmap-tooltip');
 
-    // 6) 稀疏数据：真实使用场景（绝大多数增量备份传输量为 0）
-    await sparseTrend(evaluate, assert, shot);
+    // 新历史到达后，同一天聚合；零传输与无记录保持可区分。
+    await evaluate(`(()=>{
+      const today=new Date();today.setHours(12,0,0,0);
+      const yesterday=new Date(today);yesterday.setDate(yesterday.getDate()-1);
+      const record=(finishedAt,totalBytes,success,filesCopied)=>({finishedAt,totalBytes,success,filesCopied,durationMs:100});
+      handlePush({type:'history',data:[record(today.getTime(),100,true,2),record(today.getTime(),200,false,3),record(yesterday.getTime(),0,true,0)]});
+    })()`);
+    assert.equal(await evaluate("document.querySelectorAll('.heatmap-day.has-record').length"), 2);
+    assert.equal(await evaluate("document.querySelectorAll('.heatmap-day.has-failure').length"), 1);
+    assert.equal(await evaluate("document.querySelectorAll('.heatmap-day.has-record[data-level=\"0\"]').length"), 1);
+    assert.equal(await evaluate("document.querySelector('#sum-count').textContent"), '3');
+    assert.match(await evaluate("document.querySelector('.heatmap-summary').textContent"), /3 次备份.*5 个更新文件.*300.00 B/);
+    await evaluate("document.querySelector('.heatmap-day:last-child').focus()");
+    assert.match(await evaluate("document.querySelector('#heatmap-tooltip').textContent"), /300.00 B/);
+    assert.match(await evaluate("document.querySelector('#heatmap-tooltip').textContent"), /1 \/ 1/);
+    await send('Input.dispatchKeyEvent', {type:'keyDown', key:'ArrowUp', code:'ArrowUp'});
+    await send('Input.dispatchKeyEvent', {type:'keyUp', key:'ArrowUp', code:'ArrowUp'});
+    assert.equal(await evaluate("document.activeElement.dataset.index"), '363');
+    assert.match(await evaluate("document.querySelector('#heatmap-tooltip').textContent"), /0 B/);
+    assert.equal(await evaluate("document.querySelectorAll('.heatmap-day[tabindex=\"0\"]').length"), 1);
+    await send('Input.dispatchKeyEvent', {type:'keyDown', key:'Escape', code:'Escape'});
+    assert.equal(await evaluate("document.querySelector('#heatmap-tooltip').hidden"), true);
 
-    assert.equal(errors.length, 0, '不应有运行时异常: ' + JSON.stringify(errors));
-    assert.equal(await evaluate('document.querySelector("#main").scrollWidth <= document.querySelector("#main").clientWidth'), true, 'stats 视图无横向溢出');
-
-    console.log(JSON.stringify({ ok: true, checks: ['折线绘制(12轮/12点/2失败点)', '尺寸与容器一致', '圆点对位', '动画期渲染尺寸稳定', '反复切换不叠加', '稀疏数据(19零点+1有值)', '无运行时异常'], screenshots: ['trend-line-1120.png', 'trend-line-920.png', 'trend-sparse.png'] }, null, 2));
+    // CSS 网格在窗口变化后直接适配，无图表重绘计时器。
+    for (const width of [1120, 920]) {
+      await send('Emulation.setDeviceMetricsOverride', {width,height:740,deviceScaleFactor:1,mobile:false});
+      await send('Input.dispatchMouseEvent', {type:'mouseMoved',x:10,y:10});
+      await evaluate("document.activeElement.blur()");
+      await evaluate(`(${fixture.toString()})(${JSON.stringify(pkgVersion)});window.backupAPI.getState().then(state=>handlePush({type:'history',data:state.history}))`);
+      await pause(400);
+      const layout = await evaluate(`(()=>{
+        const cells=[...document.querySelectorAll('.heatmap-day')].map(c=>c.getBoundingClientRect());
+        let overlap=false;
+        for(let i=0;i<cells.length;i++)for(let j=i+1;j<cells.length;j++){
+          const a=cells[i],b=cells[j];
+          if(Math.min(a.right,b.right)-Math.max(a.left,b.left)>0.5 && Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top)>0.5)overlap=true;
+        }
+        const scroll=document.querySelector('.heatmap-scroll');
+        return {overlap,square:cells.every(c=>Math.abs(c.width-c.height)<1),visible:cells.every(c=>c.width>=8&&c.height>=8),count:cells.length,overflow:document.querySelector('#main').scrollWidth>document.querySelector('#main').clientWidth,fullCalendar:scroll.scrollWidth<=scroll.clientWidth,atEnd:Math.abs(scroll.scrollLeft+scroll.clientWidth-scroll.scrollWidth)<=1};
+      })()`);
+      assert.equal(layout.count,365);
+      assert.equal(layout.overlap,false);
+      assert.equal(layout.square,true);
+      assert.equal(layout.visible,true);
+      assert.equal(layout.overflow,false);
+      assert.equal(layout.fullCalendar,true);
+      assert.equal(layout.atEnd,true);
+      await shot(`heatmap-${width}`);
+    }
+    for (const theme of ['graphite','ocean','forest','plum','calm']) {
+      await evaluate(`applyTheme('${theme}')`);
+      assert.equal(await evaluate("getComputedStyle(document.querySelector('.heatmap-day[data-level=\"4\"]')).backgroundColor"), 'rgb(8, 124, 153)');
+    }
+    await evaluate("applyTheme('graphite');switchView('dashboard');switchView('stats')");
+    assert.equal(await evaluate("document.querySelectorAll('.heatmap-calendar').length"), 1);
+    assert.equal(await evaluate("document.querySelectorAll('#heatmap-tooltip').length"), 1);
+    await evaluate("handlePush({type:'history',data:[]})");
+    assert.equal(await evaluate("document.querySelectorAll('.heatmap-day').length"), 365);
+    assert.equal(await evaluate("document.querySelectorAll('.heatmap-day.has-record').length"), 0);
+    assert.match(await evaluate("document.querySelector('.heatmap-empty').textContent"), /暂无备份记录/);
+    await shot('heatmap-empty');
+    assert.deepEqual(errors, []);
+    console.log(JSON.stringify({ok:true,checks:['365 个日期','同日聚合及推送刷新','零传输与失败记录','鼠标悬浮及键盘操作','1120/920 方格布局无重叠或页面溢出','五套主题','空历史及视图切换','无运行时异常'],screenshots:output},null,2));
     try { ws.send(JSON.stringify({ id: 999999, method: 'Browser.close' })); } catch {}
   } finally {
     await pause(200); ws?.close();
