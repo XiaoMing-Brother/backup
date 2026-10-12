@@ -68,6 +68,20 @@ const fixture = (version) => {
       await shot(theme);
     }
     await evaluate("applyTheme('graphite')");
+    // 开机静默启动：依赖「开机自动启动」，未开自启时置灰，开启后可保存。
+    await evaluate("switchView('settings')");
+    assert.equal(await evaluate("document.querySelector('#set-autostart-silent').disabled"),true,'silent switch is disabled without autostart');
+    await evaluate("document.querySelector('#set-autostart').click()");
+    assert.equal(await evaluate('S.config.autoStart'),true,'autostart saves through the API');
+    assert.equal(await evaluate("document.querySelector('#set-autostart-silent').disabled"),false,'silent switch enables with autostart');
+    await evaluate("document.querySelector('#set-autostart-silent').click()");
+    assert.equal(await evaluate('S.config.autoStartSilent'),true,'silent autostart saves through the API');
+    await evaluate("document.querySelector('#set-autostart').click()");
+    assert.equal(await evaluate("document.querySelector('#set-autostart-silent').disabled"),true,'silent switch greys out again when autostart is off');
+    await evaluate("document.querySelector('#set-autostart').click()");
+    await evaluate("document.querySelector('#set-autostart-silent').closest('.card').scrollIntoView({block:'center'})");
+    assert.equal(await evaluate("document.querySelector('#set-autostart-silent').checked"),true,'silent switch stays on after re-enabling autostart');
+    await shot('autostart-behavior');
     await evaluate("switchView('settings');document.querySelector('#exclude-patterns').value='node_modules\\n*.zip';document.querySelector('#exclude-patterns').dispatchEvent(new Event('input'));handlePush({type:'status',data:{running:false}})");
     assert.equal(await evaluate("document.querySelector('#exclude-patterns').value"), 'node_modules\n*.zip', 'status updates preserve the draft');
     await evaluate("window.backupAPI.saveConfig({theme:'graphite'});document.querySelector('[data-exclude=\"node_modules\"]').click();document.querySelector('[data-exclude=\".git\"]').click();document.querySelector('#btn-save-excludes').click()");

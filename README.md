@@ -56,6 +56,10 @@ node tools/tauri-smoke.cjs src-tauri/target/release/Backy.exe
 `app/renderer/app.js` 调用 `window_action("show")` 显示，Rust 端另有 5 秒兜底：这样窗口出现在屏幕上时
 界面已经画好，不会先露出 WebView2 提交首帧前的白色空窗。改动这里请保留这条链路。
 
+开机自启的注册表项附带 `--autostart` 参数（`src-tauri/src/main.rs` 的 `AUTOSTART_ARG`）。当设置里开启
+「开机自启时静默启动」时，该进程只驻留托盘、不显示主窗口：`window_action("show")` 的第一次调用会被吞掉，
+5 秒兜底也跳过，用户从托盘或手动双击打开时才显示。改动启动逻辑时注意别让静默进程弹出窗口。
+
 依赖、构建产物（`node_modules/`、`src-tauri/target/`、`release/`）、界面截图产物
 （`artifacts/`）、本地兼容库（`tools/msvc-libs/`）和开发期运行数据都已在 `.gitignore` 中排除。
 

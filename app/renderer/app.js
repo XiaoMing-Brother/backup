@@ -521,6 +521,9 @@ function renderSettings() {
   $("#set-notify").checked = S.config.notifyOnFinish !== false;
   $("#set-tray").checked = S.config.minimizeToTray !== false;
   $("#set-autostart").checked = !!S.config.autoStart;
+  $("#set-autostart-silent").checked = !!S.config.autoStartSilent;
+  // 静默启动只对开机自启生效，总开关关闭时置灰提示。
+  $("#set-autostart-silent").disabled = !S.config.autoStart;
   $("#set-autobackup").checked = !!S.config.autoStartBackup;
   $("#set-quark").checked = !!S.config.quarkEnabled;
   const root = $("#quark-root");
@@ -771,6 +774,7 @@ function bindButtons() {
   // 应用行为
   bindInstantSave($("#set-tray"), "minimizeToTray");
   bindInstantSave($("#set-autostart"), "autoStart");
+  bindInstantSave($("#set-autostart-silent"), "autoStartSilent");
   bindInstantSave($("#set-autobackup"), "autoStartBackup");
   bindInstantSave($("#set-quark"), "quarkEnabled");
   $("#btn-quark-login").addEventListener("click", async () => {
@@ -1284,6 +1288,8 @@ document.addEventListener("auxclick", handleExternalLink, true);
   const state = await window.backupAPI.getState();
   S.config = state.config;
   Object.assign(S.status, state.status);
+  // 开机静默启动时主窗口保持隐藏，避免后台状态下仍按“窗口可见”刷新动画与日志。
+  windowVisible = !S.status.silentStart;
   S.liveStats = state.liveStats || null;
   S.backupProgress = S.liveStats?.progress || null;
   S.logs = (state.logs || []).slice(-LOG_LIMIT);

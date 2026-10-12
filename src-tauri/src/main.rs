@@ -36,9 +36,20 @@ struct Data {
     quark_login_checking: bool,
     control: Option<Arc<RunControl>>,
     recovery: Option<Value>,
+    /// 本次进程由开机自启拉起且开启了静默启动：为真时界面不应主动显示主窗口。
+    silent_start: bool,
 }
 struct Runtime(Mutex<Data>);
 struct TrayAuto(CheckMenuItem<tauri::Wry>);
+struct TrayAutoSilent(CheckMenuItem<tauri::Wry>);
+/// 开机自启写入注册表时附带的参数，用于区分「开机拉起」和「用户手动双击」。
+const AUTOSTART_ARG: &str = "--autostart";
+/// 静默启动只吞掉渲染层启动时那一次「显示窗口」请求；用户随后从托盘打开不受影响。
+static SILENT_START_PENDING: AtomicBool = AtomicBool::new(false);
+/// 开机静默只在「由注册表拉起」且用户开启开关时成立；手动双击不带该参数。
+fn silent_start_enabled(args: &[String], config: &Value) -> bool {
+    args.iter().any(|a| a == AUTOSTART_ARG) && config["autoStartSilent"].as_bool().unwrap_or(false)
+}
 #[derive(Default)]
 struct RunControl {
     pause_requested: AtomicBool,
@@ -84,7 +95,7 @@ fn checkpoint(app: &AppHandle, control: &RunControl, announced_pause: &mut bool)
 fn defaults() -> Value {
     json!({"tasks": [], "intervalMinutes":30, "scheduleMode":"interval", "dailyTimes":["09:00","18:00"],
         "weeklyDays":[1,5], "weeklyTime":"09:00", "notifyOnFinish":true, "theme":"graphite", "dryRun":false,
-        "useHashComparison":true, "minimizeToTray":true, "autoStart":false, "autoStartBackup":true, "shortcutCreated":false,
+        "useHashComparison":true, "minimizeToTray":true, "autoStart":false, "autoStartSilent":false, "autoStartBackup":true, "shortcutCreated":false,
         "quarkEnabled":false, "quarkRootId":"0", "excludePatterns":backup::DEFAULT_EXCLUDE_PATTERNS})
 }
 
@@ -148,6 +159,7 @@ fn status(d: &Data) -> Value {
         json!(d.control.as_ref().is_some_and(|c| c.paused.load(Ordering::Acquire))),
     );
     o.insert("recovery".into(), d.recovery.clone().unwrap_or(Value::Null));
+    o.insert("silentStart".into(), json!(d.silent_start));
     o.insert(
         "taskCount".into(),
         json!(d.config["tasks"].as_array().map_or(0, Vec::len)),
@@ -186,6 +198,8 @@ static UI_SHOWN: AtomicBool = AtomicBool::new(false);
 const UI_SHOW_FALLBACK: Duration = Duration::from_secs(5);
 
 fn show(app: &AppHandle) {
+    // 显式打开界面（托盘、菜单、二次启动）会解除静默启动的抑制。
+    SILENT_START_PENDING.store(false, Ordering::Release);
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.unminimize();
         let _ = w.show();
@@ -204,6 +218,7 @@ fn publish_status(app: &AppHandle) {
     let d = state.0.lock().unwrap_or_else(|e| e.into_inner());
     let payload = status(&d);
     let auto = d.config["autoStart"].as_bool().unwrap_or(false);
+    let auto_silent = d.config["autoStartSilent"].as_bool().unwrap_or(false);
     let text = if d.running { "备份中" } else if d.scheduler { "定时运行中" } else { "定时已停止" };
     drop(d);
     push(app, "status", payload);
@@ -211,6 +226,9 @@ fn publish_status(app: &AppHandle) {
         let _ = item
             .0
             .set_checked(auto);
+    }
+    if let Some(item) = app.try_state::<TrayAutoSilent>() {
+        let _ = item.0.set_checked(auto_silent);
     }
     if let Some(tray) = app.tray_by_id("main") {
         let _ = tray.set_tooltip(Some(format!("Backy - {text}")));
@@ -763,6 +781,7 @@ fn validate_config(cfg: &Value) -> Result<(), String> {
         "useHashComparison",
         "minimizeToTray",
         "autoStart",
+        "autoStartSilent",
         "autoStartBackup",
         "quarkEnabled",
     ] {
@@ -835,6 +854,8 @@ fn save_config(app: AppHandle, partial: Value) -> Result<Value, String> {
     Ok(json!({"ok":true,"config":config}))
 }
 fn apply_autostart(app: &AppHandle, enabled: bool) -> Result<(), String> {
+    // 插件构建时带了 --autostart（见 main()），注册项因此总是写入该参数；
+    // 每次启用都会重写一遍，老版本遗留的无参数注册项也会被更新。
     if enabled {
         app.autolaunch().enable()
     } else {
@@ -924,6 +945,11 @@ fn perform_window_action(app: &AppHandle, action: &str) -> Result<bool, String> 
     let result = match action {
         // 渲染层渲染完首帧后调用：这时显示窗口，不会先露出 WebView2 的白色空窗。
         "show" => {
+            // 开机静默启动时渲染层也会走到这里：只吞掉启动时这一次请求，不显示窗口。
+            // 用户从托盘或二次启动调用 show() 时会先清掉标志，可正常打开界面。
+            if SILENT_START_PENDING.swap(false, Ordering::AcqRel) {
+                return Ok(false);
+            }
             UI_SHOWN.store(true, Ordering::Release);
             show(app);
             Ok(())
@@ -1004,6 +1030,9 @@ fn initialize() -> Result<Data, String> {
     } else {
         None
     };
+    // 只有「开机拉起」且用户开了静默开关时才不显示主窗口；手动双击始终显示界面。
+    let silent_start = silent_start_enabled(&std::env::args().collect::<Vec<_>>(), &config);
+    SILENT_START_PENDING.store(silent_start, Ordering::Release);
     Ok(Data {
         dir,
         config,
@@ -1018,6 +1047,7 @@ fn initialize() -> Result<Data, String> {
         quark_login_checking: false,
         control: None,
         recovery,
+        silent_start,
     })
 }
 
@@ -1133,16 +1163,40 @@ mod tests {
         assert!(changes_schedule(&json!({"intervalMinutes": 15})));
         assert!(changes_schedule(&json!({"scheduleMode": "daily"})));
     }
+
+    #[test]
+    fn silent_start_requires_both_the_autostart_arg_and_the_switch() {
+        let args = |extra: &[&str]| {
+            std::iter::once("Backy.exe".to_string())
+                .chain(extra.iter().map(|a| a.to_string()))
+                .collect::<Vec<_>>()
+        };
+        let mut config = defaults();
+        assert!(!silent_start_enabled(&args(&[]), &config));
+        assert!(!silent_start_enabled(&args(&[AUTOSTART_ARG]), &config));
+        config["autoStartSilent"] = json!(true);
+        assert!(!silent_start_enabled(&args(&[]), &config));
+        assert!(silent_start_enabled(&args(&[AUTOSTART_ARG]), &config));
+        assert!(silent_start_enabled(&args(&[AUTOSTART_ARG, "--other"]), &config));
+    }
 }
 
 fn main() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _, _| show(app)))
+        // 第二个实例若也是开机静默拉起（例如登录时重复触发），不要弹出界面。
+        .plugin(tauri_plugin_single_instance::init(|app, args, _| {
+            if args.iter().any(|a| a == AUTOSTART_ARG) {
+                return;
+            }
+            show(app)
+        }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(
             tauri_plugin_autostart::Builder::new()
                 .app_name("incremental-backup-assistant")
+                // 开机拉起时带上参数，启动逻辑据此决定是否静默（不弹主窗口）。
+                .arg(AUTOSTART_ARG)
                 .build(),
         )
         .invoke_handler(tauri::generate_handler![
@@ -1175,6 +1229,7 @@ fn main() {
                 }
             };
             let auto = data.config["autoStart"].as_bool().unwrap_or(false);
+            let auto_silent = data.config["autoStartSilent"].as_bool().unwrap_or(false);
             app.manage(Runtime(Mutex::new(data)));
             let handle = app.handle();
             // 独立测试目录不改变当前用户的开机启动设置。
@@ -1190,6 +1245,15 @@ fn main() {
             let auto_item =
                 CheckMenuItem::with_id(app, "auto", "开机自启", true, auto, None::<&str>)?;
             app.manage(TrayAuto(auto_item.clone()));
+            let auto_silent_item = CheckMenuItem::with_id(
+                app,
+                "auto-silent",
+                "开机静默启动（不显示主界面）",
+                true,
+                auto_silent,
+                None::<&str>,
+            )?;
+            app.manage(TrayAutoSilent(auto_silent_item.clone()));
             let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
             let menu = Menu::with_items(
                 app,
@@ -1199,6 +1263,7 @@ fn main() {
                     &start_item,
                     &stop_item,
                     &auto_item,
+                    &auto_silent_item,
                     &quit_item,
                 ],
             )?;
@@ -1240,6 +1305,13 @@ fn main() {
                                 .unwrap_or(false);
                             save_config(app.clone(), json!({"autoStart":enabled})).map(|_| ())
                         }
+                        "auto-silent" => {
+                            let enabled = !app.state::<Runtime>().0.lock().unwrap_or_else(|e| e.into_inner()).config
+                                ["autoStartSilent"]
+                                .as_bool()
+                                .unwrap_or(false);
+                            save_config(app.clone(), json!({"autoStartSilent":enabled})).map(|_| ())
+                        }
                         "quit" => perform_window_action(app, "quit").map(|_| ()),
                         _ => Ok(()),
                     };
@@ -1252,14 +1324,32 @@ fn main() {
                 .build(app)?;
             // 窗口是隐藏启动的，正常由渲染层首帧就绪后显示；前端要是没报到（脚本报错、
             // WebView2 起不来），这里兜底显示，避免应用看起来「没打开」。
+            // 开机静默启动时不兜底显示，否则几秒后会突然弹窗，违背静默的预期。
+            let silent_start = app
+                .state::<Runtime>()
+                .0
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .silent_start;
             let fallback: AppHandle = app.handle().clone();
             std::thread::spawn(move || {
+                if silent_start {
+                    return;
+                }
                 std::thread::sleep(UI_SHOW_FALLBACK);
                 if !UI_SHOWN.load(Ordering::Acquire) {
                     show(&fallback);
                 }
             });
-            log(handle, "info", "应用已启动（Tauri）");
+            log(
+                handle,
+                "info",
+                if silent_start {
+                    "应用已静默启动（Tauri），请在托盘中打开界面"
+                } else {
+                    "应用已启动（Tauri）"
+                },
+            );
             let handle = handle.clone();
             std::thread::spawn(move || loop {
                 std::thread::sleep(Duration::from_millis(500));
